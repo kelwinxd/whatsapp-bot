@@ -1,0 +1,45 @@
+services:
+  api:
+    container_name: evolution_api
+    image: evoapicloud/evolution-api:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      # 8080 é a porta da API e também do painel, em /manager.
+      - '8080:8080'
+    env_file:
+      - .env
+    volumes:
+      # Sessão do WhatsApp. Sem este volume, cada recriação do container
+      # desconecta o número e exige escanear o QR de novo.
+      - evolution_instances:/evolution/instances
+
+  postgres:
+    container_name: evolution_postgres
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      # 5434 no host: a 5432 é do PostgreSQL nativo desta máquina e a 5433
+      # já é do suplementos-project.
+      - '5434:5432'
+    volumes:
+      - evolution_postgres:/var/lib/postgresql/data
+
+  redis:
+    container_name: evolution_redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis:/data
+
+volumes:
+  evolution_instances:
+  evolution_postgres:
+  evolution_redis:
