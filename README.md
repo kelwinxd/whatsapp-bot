@@ -1,0 +1,100 @@
+# wp-bot
+
+Bot de WhatsApp que responde com um modelo de linguagem. O provedor de
+WhatsApp, o de IA e o repositório de conversas são trocáveis por configuração.
+
+## Arquitetura
+
+```
+index.js                          bootstrap: monta as peças e sobe o HTTP
+src/
+  config.js                       único lugar que lê process.env
+  server.js                       Express: traduz HTTP em chamada de serviço
+  core/
+    ports.js                      contratos (WhatsApp, IA, conversas)
+    registry.js                   escolhe a implementação de cada porta
+    BotService.js                 a regra do bot
+    prompt.js                     prompt de sistema
+  adapters/
+    whatsapp/ZapiAdapter.js
+    whatsapp/EvolutionAdapter.js
+    ia/OpenAIAdapter.js
+    conversas/MemoriaRepo.js
+```
+
+O núcleo depende só das portas de `core/ports.js`. Cada adaptador traduz a API
+de um provedor para esses contratos, e o `registry.js` escolhe qual usar a
+partir do `.env`. Trocar de tecnologia é mudar uma variável; acrescentar uma é
+escrever o adaptador e somar uma linha no catálogo.
+
+Todo webhook vira a mesma `MensagemRecebida`:
+
+```js
+{ telefone, nome, texto, minha, grupo, bruto }
+```
+
+## Rodando
+
+```bash
+npm install
+cp .env.example .env   # preencha as chaves
+npm run dev
+npm test
+```
+
+`GET /health` mostra quais provedores estão ativos.
+
+O provedor precisa alcançar `POST /webhook` pela internet. Em
+desenvolvimento, um túnel resolve:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+A URL do túnel muda a cada execução — atualize o webhook no provedor.
+
+## Trocando de provedor de WhatsApp
+
+No `.env`: `WHATSAPP_PROVIDER=zapi` ou `WHATSAPP_PROVIDER=evolution`.
+
+### Evolution API (self-hosted)
+
+Sobe a API, o Postgres e o Redis:
+
+```bash
+cd evolution
+cp .env.example .env   # troque a chave e a senha
+docker compose up -d
+```
+
+O painel fica em <http://localhost:8080/manager> e pede a
+`AUTHENTICATION_API_KEY`. As portas 8080 (API) e 5434 (Postgres) são do
+compose; o bot continua na 3000.
+
+Criar a instância e ler o QR code:
+
+```bash
+curl -X POST http://localhost:8080/instance/create \
+  -H "apikey: $AUTHENTICATION_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"instanceName":"bot","integration":"WHATSAPP-BAILEYS","qrcode":true}'
+```
+
+Apontar o webhook para o bot (de dentro do container, a máquina host é
+`host.docker.internal`):
+
+```bash
+curl -X POST http://localhost:8080/webhook/set/bot \
+  -H "apikey: $AUTHENTICATION_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"webhook":{"enabled":true,"url":"http://host.docker.internal:3000/webhook","events":["MESSAGES_UPSERT"]}}'
+```
+
+Depois, no `.env` do bot:
+
+```
+WHATSAPP_PROVIDER=evolution
+EVOLUTION_BASE_URL=http://localhost:8080
+EVOLUTION_INSTANCE=bot
+EVOLUTION_API_KEY=<a mesma chave global>
+```
+
+A Z-API continua configurada e volta a valer trocando `WHATSAPP_PROVIDER`.
