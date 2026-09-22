@@ -1,0 +1,48 @@
+import "dotenv/config";
+
+// Ponto único de leitura de variáveis de ambiente. Nenhum outro arquivo lê
+// process.env: assim dá para ver de relance tudo que o projeto precisa, e
+// trocar a origem da configuração (arquivo, cofre de segredos) num lugar só.
+
+export const config = {
+  porta: Number(process.env.PORT ?? 3000),
+
+  // Qual implementação de cada porta usar. É aqui que se troca de tecnologia.
+  provedores: {
+    whatsapp: process.env.WHATSAPP_PROVIDER ?? "zapi", // zapi | evolution
+    ia: process.env.AI_PROVIDER ?? "openai",
+    historico: process.env.HISTORY_STORE ?? "memoria",
+  },
+
+  zapi: {
+    instanceId: process.env.ZAPI_INSTANCE_ID,
+    instanceToken: process.env.ZAPI_INSTANCE_TOKEN,
+    clientToken: process.env.ZAPI_CLIENT_TOKEN,
+  },
+
+  evolution: {
+    baseUrl: process.env.EVOLUTION_BASE_URL,
+    instancia: process.env.EVOLUTION_INSTANCE,
+    apiKey: process.env.EVOLUTION_API_KEY,
+  },
+
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY,
+    modelo: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? 500),
+  },
+
+  conversa: {
+    // Mensagens guardadas por contato (usuário + bot somados).
+    maxHistorico: Number(process.env.MAX_HISTORICO ?? 10),
+  },
+};
+
+// Falha na inicialização, não na primeira mensagem: um erro de configuração
+// aparece quando você sobe o servidor, e não no meio de uma conversa real.
+export function exigirVariaveis(nomes, valores) {
+  const faltando = nomes.filter((n) => !valores[n]);
+  if (faltando.length > 0) {
+    throw new Error(`Variáveis de ambiente faltando: ${faltando.join(", ")}`);
+  }
+}
