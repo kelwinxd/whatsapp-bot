@@ -18,7 +18,20 @@
  * @property {string} texto     Conteúdo da mensagem
  * @property {boolean} minha    true quando fui eu (o número do bot) que enviei
  * @property {boolean} grupo    true quando veio de um grupo
+ * @property {Midia | null} midia  Anexo, quando a mensagem tiver um
  * @property {object} bruto     Payload original, para log e depuração
+ */
+
+/**
+ * Anexo da mensagem. Só o descritor: o conteúdo em si é baixado depois, por
+ * obterMidiaBase64(), porque cada provedor entrega de um jeito (a Evolution
+ * exige uma segunda chamada, a Z-API manda uma URL) e porque mídia pesada não
+ * deve trafegar em todo evento de webhook.
+ *
+ * @typedef {object} Midia
+ * @property {'imagem'|'audio'|'video'|'documento'} tipo
+ * @property {string} mimetype
+ * @property {object} referencia  O que o adaptador precisa para baixar
  */
 
 export class ProvedorWhatsApp {
@@ -47,6 +60,16 @@ export class ProvedorWhatsApp {
    */
   async enviarTexto(params) {
     throw new Error(`${this.nome} não implementou enviarTexto()`);
+  }
+
+  /**
+   * Baixa o conteúdo de um anexo descrito por MensagemRecebida.midia.
+   *
+   * @param {Midia} midia
+   * @returns {Promise<{ base64: string, mimetype: string }>}
+   */
+  async obterMidiaBase64(midia) {
+    throw new Error(`${this.nome} não implementou obterMidiaBase64()`);
   }
 }
 
