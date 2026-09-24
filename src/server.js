@@ -1,4 +1,5 @@
 import express from "express";
+import { perfisDisponiveis } from "./core/prompt.js";
 
 // Camada HTTP: só traduz requisição em chamada de serviço. Recebe o BotService
 // pronto, então dá para subir o servidor com um serviço falso em teste.
@@ -9,9 +10,16 @@ export function criarServidor({ bot, logger = console }) {
 
   app.get("/", (_req, res) => res.send("Bot vivo 🚀"));
 
-  // Saúde: útil para monitoramento e para conferir qual provedor está ativo.
+  // Saúde: útil para monitoramento e para conferir, sem abrir o .env, o que
+  // está valendo agora — inclusive quais perfis de prompt existem.
   app.get("/health", (_req, res) =>
-    res.json({ ok: true, whatsapp: bot.whatsapp.nome, ia: bot.ia.nome }),
+    res.json({
+      ok: true,
+      whatsapp: bot.whatsapp.nome,
+      ia: bot.ia.nome,
+      prompt: bot.prompt.textoCustomizado ? "customizado" : bot.prompt.perfil,
+      perfisDisponiveis,
+    }),
   );
 
   app.post("/webhook", (req, res) => {
