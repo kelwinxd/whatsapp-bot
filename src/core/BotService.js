@@ -11,10 +11,11 @@ const ERRO_AO_RESPONDER =
   "Tive um probleminha para responder agora 😕 Tenta de novo em instantes.";
 
 export class BotService {
-  constructor({ whatsapp, ia, conversas, logger = console }) {
+  constructor({ whatsapp, ia, conversas, prompt = { perfil: "suplementos" }, logger = console }) {
     this.whatsapp = whatsapp;
     this.ia = ia;
     this.conversas = conversas;
+    this.prompt = prompt;
     this.logger = logger;
   }
 
@@ -49,7 +50,7 @@ export class BotService {
       await this.conversas.acrescentar(telefone, { role: "user", content: texto });
 
       const resposta = await this.ia.responder({
-        sistema: montarPromptDeSistema({ nome }),
+        sistema: montarPromptDeSistema({ nome, ...this.prompt }),
         mensagens: await this.conversas.historico(telefone),
       });
 

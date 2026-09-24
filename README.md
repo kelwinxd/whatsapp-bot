@@ -65,6 +65,19 @@ cloudflared tunnel --url http://localhost:3000
 
 A URL do túnel muda a cada execução — atualize o webhook no provedor.
 
+## Trocando o comportamento da IA
+
+`PROMPT_PERFIL` no `.env` escolhe o que vai antes da conversa:
+
+| Perfil | O que o modelo recebe |
+| --- | --- |
+| `suplementos` | assistente de suplementos e alimentação, com regras de tema de saúde |
+| `whatsapp` | só as regras de formatação e o português; responde sobre qualquer assunto |
+| `puro` | nada — nenhuma instrução nossa, só o histórico da conversa |
+
+Para um texto próprio sem mexer no código, preencha `SYSTEM_PROMPT`, que tem
+prioridade sobre o perfil. Os perfis ficam em `src/core/prompt.js`.
+
 ## Trocando de provedor de WhatsApp
 
 No `.env`: `WHATSAPP_PROVIDER=zapi` ou `WHATSAPP_PROVIDER=evolution`.

@@ -40,6 +40,13 @@ export const config = {
     // Mensagens guardadas por contato (usuário + bot somados).
     maxHistorico: Number(process.env.MAX_HISTORICO ?? 10),
   },
+
+  prompt: {
+    // suplementos | whatsapp | puro (ver src/core/prompt.js)
+    perfil: process.env.PROMPT_PERFIL ?? "suplementos",
+    // Texto próprio; quando preenchido, ignora o perfil.
+    textoCustomizado: process.env.SYSTEM_PROMPT,
+  },
 };
 
 // Falha na inicialização, não na primeira mensagem: um erro de configuração

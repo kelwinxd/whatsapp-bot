@@ -27,7 +27,9 @@ export class OpenAIAdapter extends ProvedorIA {
       body: JSON.stringify({
         model: this.modelo,
         max_tokens: this.maxTokens,
-        messages: [{ role: "system", content: sistema }, ...mensagens],
+        // sistema nulo = perfil "puro": vai só a conversa, sem nenhuma
+        // instrução nossa antes.
+        messages: sistema ? [{ role: "system", content: sistema }, ...mensagens] : mensagens,
       }),
     });
 

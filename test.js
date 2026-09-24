@@ -4,6 +4,7 @@ import { ZapiAdapter } from "./src/adapters/whatsapp/ZapiAdapter.js";
 import { EvolutionAdapter } from "./src/adapters/whatsapp/EvolutionAdapter.js";
 import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
 import { BotService } from "./src/core/BotService.js";
+import { montarPromptDeSistema } from "./src/core/prompt.js";
 
 // Rode com: npm test
 // Nada aqui toca a rede: os adaptadores de WhatsApp e IA são substituídos por
@@ -142,4 +143,42 @@ test("histórico corta as mensagens mais antigas", async () => {
   const repo = new MemoriaRepo({ maxHistorico: 2 });
   for (const c of ["a", "b", "c"]) await repo.acrescentar("551", { role: "user", content: c });
   assert.deepEqual((await repo.historico("551")).map((m) => m.content), ["b", "c"]);
+});
+
+test("perfis de prompt: suplementos, whatsapp, puro e customizado", () => {
+  const comNome = { nome: "Kelwin" };
+
+  assert.match(montarPromptDeSistema({ ...comNome, perfil: "suplementos" }), /suplementos e alimentação/);
+  assert.match(montarPromptDeSistema({ ...comNome, perfil: "whatsapp" }), /português do Brasil/);
+  assert.doesNotMatch(montarPromptDeSistema({ ...comNome, perfil: "whatsapp" }), /suplementos/);
+
+  // Puro: nada é enviado antes da conversa.
+  assert.equal(montarPromptDeSistema({ ...comNome, perfil: "puro" }), null);
+
+  // Texto próprio vence o perfil.
+  assert.equal(
+    montarPromptDeSistema({ ...comNome, perfil: "suplementos", textoCustomizado: "Seja um pirata." }),
+    "Seja um pirata.",
+  );
+
+  assert.throws(() => montarPromptDeSistema({ ...comNome, perfil: "inexistente" }), /Perfil de prompt desconhecido/);
+});
+
+test("o perfil escolhido chega na IA", async () => {
+  const recebidos = [];
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async () => {},
+    },
+    ia: { nome: "falsa", responder: async (p) => { recebidos.push(p.sistema); return "ok"; } },
+    conversas: new MemoriaRepo({ maxHistorico: 4 }),
+    prompt: { perfil: "puro" },
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.processarWebhook(webhook("qual a capital da França?"));
+
+  assert.equal(recebidos[0], null);
 });

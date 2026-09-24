@@ -9,13 +9,14 @@ import { criarServidor } from "./src/server.js";
 console.log("🔧 Iniciando...");
 
 const dependencias = montarDependencias(config);
-const bot = new BotService(dependencias);
+const bot = new BotService({ ...dependencias, prompt: config.prompt });
 const app = criarServidor({ bot });
 
 const server = app.listen(config.porta, () => {
   console.log(`✅ Express rodando em http://localhost:${config.porta}`);
   console.log(`📮 Webhook em POST /webhook`);
   console.log(`📱 WhatsApp: ${dependencias.whatsapp.nome} | 🧠 IA: ${dependencias.ia.nome}`);
+  console.log(`💬 Prompt: ${config.prompt.textoCustomizado ? "customizado" : config.prompt.perfil}`);
 });
 
 server.on("error", (err) => console.error("❌ Erro no servidor:", err));
