@@ -32,6 +32,10 @@ export const config = {
     maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? 500),
   },
 
+  // Número usado nos testes manuais de envio (npm run enviar). Fica no .env
+  // para não versionar telefone de ninguém.
+  numeroTeste: process.env.NUMBER_TEST,
+
   conversa: {
     // Mensagens guardadas por contato (usuário + bot somados).
     maxHistorico: Number(process.env.MAX_HISTORICO ?? 10),

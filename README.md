@@ -44,6 +44,18 @@ npm test
 
 `GET /health` mostra quais provedores estão ativos.
 
+Para testar o envio sem esperar alguém mandar mensagem, preencha `NUMBER_TEST`
+no `.env` e use:
+
+```bash
+npm run enviar                          # texto padrão para NUMBER_TEST
+npm run enviar -- "oi, teste"           # texto próprio
+npm run enviar -- "oi" 5519999999999    # texto e destino próprios
+```
+
+O script usa o mesmo adaptador do bot, então ele envia pelo provedor que
+estiver em `WHATSAPP_PROVIDER`.
+
 O provedor precisa alcançar `POST /webhook` pela internet. Em
 desenvolvimento, um túnel resolve:
 
