@@ -30,8 +30,22 @@ escrever o adaptador e somar uma linha no catálogo.
 Todo webhook vira a mesma `MensagemRecebida`:
 
 ```js
-{ telefone, nome, texto, minha, grupo, bruto }
+{ telefone, nome, texto, minha, grupo, midia, bruto }
 ```
+
+## Imagem recebida
+
+Mandando uma foto para o bot, ele responde sobre ela: visão é nativa do
+modelo, não é ferramenta. O `midia` do webhook é só um descritor; o conteúdo é
+baixado sob demanda por `obterMidiaBase64()` — na Evolution via
+`/chat/getBase64FromMediaMessage`, na Z-API baixando a URL que ela manda.
+
+No histórico fica apenas `[imagem enviada] <pergunta>`, nunca a imagem. Imagem
+no `gpt-4o-mini` custa 33x em tokens, e guardá-la faria o modelo ser cobrado
+por ela de novo em toda resposta seguinte da conversa.
+
+Áudio, vídeo e documento são reconhecidos, mas o bot responde dizendo que
+ainda não os trata — em vez de ficar calado.
 
 ## Rodando
 
