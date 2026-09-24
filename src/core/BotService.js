@@ -10,6 +10,18 @@ const DIGITANDO_MAXIMO_MS = 15_000; // teto da Z-API; a Evolution aceita mais
 const ERRO_AO_RESPONDER =
   "Tive um probleminha para responder agora 😕 Tenta de novo em instantes.";
 
+// Só imagem por enquanto: é visão nativa do modelo. Áudio pediria transcrição
+// (Whisper) e documento, extração de texto — cada um é outro caminho.
+const MIDIA_SUPORTADA = new Set(["imagem"]);
+
+const AVISO_POR_TIPO = {
+  audio: "Ainda não consigo ouvir áudio 😅 Pode escrever?",
+  video: "Ainda não consigo ver vídeo 😅 Manda uma foto ou escreve?",
+  documento: "Ainda não consigo ler documento 😅 Pode escrever o que precisa?",
+};
+
+const PERGUNTA_PADRAO_IMAGEM = "O que tem nesta imagem?";
+
 export class BotService {
   constructor({ whatsapp, ia, conversas, prompt = { perfil: "suplementos" }, logger = console }) {
     this.whatsapp = whatsapp;
@@ -43,17 +55,51 @@ export class BotService {
     return this.responder(mensagem);
   }
 
+  // Monta o que vai para a IA nesta rodada e o que fica guardado no histórico.
+  // São coisas diferentes de propósito: a imagem vai inteira para o modelo
+  // agora, mas no histórico entra só uma marca em texto. Guardar a imagem
+  // faria o modelo ser cobrado por ela de novo em toda resposta seguinte da
+  // conversa — e imagem no gpt-4o-mini custa 33x em tokens.
+  async prepararConteudo({ texto, midia }) {
+    if (!midia) return { paraIA: texto, paraHistorico: texto };
+
+    const { base64, mimetype } = await this.whatsapp.obterMidiaBase64(midia);
+    const pergunta = texto || PERGUNTA_PADRAO_IMAGEM;
+
+    return {
+      paraIA: [
+        { type: "text", text: pergunta },
+        { type: "image_url", image_url: { url: `data:${mimetype};base64,${base64}` } },
+      ],
+      paraHistorico: `[imagem enviada] ${pergunta}`,
+    };
+  }
+
   async responder(mensagem) {
-    const { telefone, nome, texto } = mensagem;
+    const { telefone, nome, texto, midia } = mensagem;
+
+    if (midia && !MIDIA_SUPORTADA.has(midia.tipo)) {
+      const aviso = AVISO_POR_TIPO[midia.tipo] ?? "Ainda não consigo abrir esse tipo de arquivo 😅";
+      await this.whatsapp
+        .enviarTexto({ telefone, texto: aviso, digitandoMs: this.digitandoMs(aviso) })
+        .catch((e) => this.logger.error("❌ Falha ao avisar sobre a mídia:", e));
+      return { tratada: false, motivo: `mídia não suportada: ${midia.tipo}` };
+    }
 
     try {
-      await this.conversas.acrescentar(telefone, { role: "user", content: texto });
+      const { paraIA, paraHistorico } = await this.prepararConteudo(mensagem);
 
       const resposta = await this.ia.responder({
         sistema: montarPromptDeSistema({ nome, ...this.prompt }),
-        mensagens: await this.conversas.historico(telefone),
+        mensagens: [
+          ...(await this.conversas.historico(telefone)),
+          { role: "user", content: paraIA },
+        ],
       });
 
+      // Só guarda depois de dar certo: falha na IA não deixa a pergunta órfã
+      // no histórico.
+      await this.conversas.acrescentar(telefone, { role: "user", content: paraHistorico });
       await this.conversas.acrescentar(telefone, { role: "assistant", content: resposta });
 
       await this.whatsapp.enviarTexto({

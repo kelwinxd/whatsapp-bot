@@ -182,3 +182,137 @@ test("o perfil escolhido chega na IA", async () => {
 
   assert.equal(recebidos[0], null);
 });
+
+// --- Imagem recebida -------------------------------------------------------
+
+const webhookEvolutionImagem = (legenda) => ({
+  event: "messages.upsert",
+  data: {
+    key: { remoteJid: "5519999999999@s.whatsapp.net", fromMe: false, id: "MSG1" },
+    pushName: "Kelwin",
+    message: { imageMessage: { mimetype: "image/jpeg", caption: legenda } },
+  },
+});
+
+test("Evolution: imagem vira mídia com a legenda como texto", () => {
+  const comLegenda = evolution.interpretarWebhook(webhookEvolutionImagem("o que tem nesse rótulo?"));
+  assert.equal(comLegenda.texto, "o que tem nesse rótulo?");
+  assert.equal(comLegenda.midia.tipo, "imagem");
+  assert.equal(comLegenda.midia.mimetype, "image/jpeg");
+  // A chave é o que o endpoint de download pede.
+  assert.equal(comLegenda.midia.referencia.id, "MSG1");
+
+  // Imagem sem legenda continua sendo mensagem tratável.
+  const semLegenda = evolution.interpretarWebhook(webhookEvolutionImagem(undefined));
+  assert.equal(semLegenda.texto, "");
+  assert.equal(semLegenda.midia.tipo, "imagem");
+
+  // Áudio é reconhecido, para o bot poder avisar que não trata.
+  const audio = evolution.interpretarWebhook({
+    event: "messages.upsert",
+    data: {
+      key: { remoteJid: "5519999999999@s.whatsapp.net", fromMe: false },
+      message: { audioMessage: { mimetype: "audio/ogg" } },
+    },
+  });
+  assert.equal(audio.midia.tipo, "audio");
+});
+
+test("Z-API: imagem vira mídia com URL para baixar", () => {
+  const m = zapi.interpretarWebhook({
+    phone: "5519999999999",
+    senderName: "Kelwin",
+    fromMe: false,
+    image: { imageUrl: "https://exemplo/foto.jpg", mimeType: "image/jpeg", caption: "olha isso" },
+  });
+  assert.equal(m.texto, "olha isso");
+  assert.equal(m.midia.tipo, "imagem");
+  assert.equal(m.midia.referencia.url, "https://exemplo/foto.jpg");
+});
+
+// Dublê com download de mídia, para o fluxo de imagem.
+function montarBotComMidia({ base64 = "AAAA", mimetype = "image/jpeg" } = {}) {
+  const enviadas = [];
+  const recebidosPelaIA = [];
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => evolution.interpretarWebhook(c),
+      enviarTexto: async (p) => enviadas.push(p),
+      obterMidiaBase64: async () => ({ base64, mimetype }),
+    },
+    ia: {
+      nome: "falsa",
+      responder: async (p) => { recebidosPelaIA.push(p.mensagens); return "Vejo um rótulo de creatina."; },
+    },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    logger: { log() {}, error() {} },
+  });
+  return { bot, enviadas, recebidosPelaIA };
+}
+
+test("imagem chega na IA como conteúdo multimodal", async () => {
+  const { bot, enviadas, recebidosPelaIA } = montarBotComMidia();
+
+  const r = await bot.processarWebhook(webhookEvolutionImagem("que suplemento é esse?"));
+
+  assert.equal(r.tratada, true);
+  assert.equal(enviadas.length, 1);
+
+  const conteudo = recebidosPelaIA[0].at(-1).content;
+  assert.ok(Array.isArray(conteudo));
+  assert.deepEqual(conteudo[0], { type: "text", text: "que suplemento é esse?" });
+  assert.equal(conteudo[1].image_url.url, "data:image/jpeg;base64,AAAA");
+});
+
+test("imagem sem legenda ganha pergunta padrão", async () => {
+  const { bot, recebidosPelaIA } = montarBotComMidia();
+
+  await bot.processarWebhook(webhookEvolutionImagem(undefined));
+
+  assert.match(recebidosPelaIA[0].at(-1).content[0].text, /O que tem nesta imagem/);
+});
+
+test("o histórico guarda só a marca em texto, nunca a imagem", async () => {
+  const { bot, recebidosPelaIA } = montarBotComMidia();
+
+  await bot.processarWebhook(webhookEvolutionImagem("é bom?"));
+  // Segunda mensagem, agora de texto: o histórico não pode carregar a imagem.
+  await bot.processarWebhook({
+    event: "messages.upsert",
+    data: {
+      key: { remoteJid: "5519999999999@s.whatsapp.net", fromMe: false },
+      pushName: "Kelwin",
+      message: { conversation: "e a dose?" },
+    },
+  });
+
+  const historico = await bot.conversas.historico("5519999999999");
+  assert.deepEqual(historico.map((m) => m.content), [
+    "[imagem enviada] é bom?",
+    "Vejo um rótulo de creatina.",
+    "e a dose?",
+    "Vejo um rótulo de creatina.",
+  ]);
+
+  // Nenhuma mensagem da segunda chamada leva image_url.
+  assert.ok(recebidosPelaIA[1].every((m) => typeof m.content === "string"));
+});
+
+test("áudio recebe aviso e não gasta chamada de IA", async () => {
+  const { bot, enviadas, recebidosPelaIA } = montarBotComMidia();
+
+  const r = await bot.processarWebhook({
+    event: "messages.upsert",
+    data: {
+      key: { remoteJid: "5519999999999@s.whatsapp.net", fromMe: false },
+      pushName: "Kelwin",
+      message: { audioMessage: { mimetype: "audio/ogg" } },
+    },
+  });
+
+  assert.equal(r.tratada, false);
+  assert.match(r.motivo, /áudio|audio/);
+  assert.equal(recebidosPelaIA.length, 0);
+  assert.match(enviadas[0].texto, /ouvir áudio/);
+});
