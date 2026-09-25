@@ -87,6 +87,16 @@ export class ProvedorIA {
   async responder(params) {
     throw new Error(`${this.nome} não implementou responder()`);
   }
+
+  /**
+   * Transcreve um áudio para texto.
+   *
+   * @param {{ base64: string, mimetype: string }} params
+   * @returns {Promise<string>}
+   */
+  async transcrever(params) {
+    throw new Error(`${this.nome} não implementou transcrever()`);
+  }
 }
 
 export class RepositorioDeConversas {

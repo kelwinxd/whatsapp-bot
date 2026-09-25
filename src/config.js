@@ -30,6 +30,8 @@ export const config = {
     apiKey: process.env.OPENAI_API_KEY,
     modelo: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
     maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? 500),
+    // whisper-1 custa US$ 0,006/min; gpt-4o-mini-transcribe, metade disso.
+    modeloTranscricao: process.env.OPENAI_TRANSCRIBE_MODEL ?? "whisper-1",
   },
 
   // Número usado nos testes manuais de envio (npm run enviar). Fica no .env
