@@ -44,8 +44,18 @@ No histórico fica apenas `[imagem enviada] <pergunta>`, nunca a imagem. Imagem
 no `gpt-4o-mini` custa 33x em tokens, e guardá-la faria o modelo ser cobrado
 por ela de novo em toda resposta seguinte da conversa.
 
-Áudio, vídeo e documento são reconhecidos, mas o bot responde dizendo que
-ainda não os trata — em vez de ficar calado.
+## Áudio recebido
+
+Áudio vira texto antes de chegar ao modelo de conversa: o adaptador baixa o
+arquivo, manda para `/v1/audio/transcriptions` e a transcrição segue o fluxo
+normal — o modelo recebe algo indistinguível de uma frase digitada. No
+histórico fica `[áudio] <transcrição>`.
+
+Se não houver fala reconhecível, o bot avisa em vez de mandar vazio para a IA.
+O modelo de transcrição é configurável em `OPENAI_TRANSCRIBE_MODEL`.
+
+Vídeo e documento continuam de fora: são reconhecidos, mas o bot responde
+dizendo que ainda não os trata — em vez de ficar calado.
 
 ## Rodando
 
