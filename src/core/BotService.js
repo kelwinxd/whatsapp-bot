@@ -11,17 +11,19 @@ const DIGITANDO_MAXIMO_MS = 15_000; // teto da Z-API; a Evolution aceita mais
 const ERRO_AO_RESPONDER =
   "Tive um probleminha para responder agora 😕 Tenta de novo em instantes.";
 
-// Só imagem por enquanto: é visão nativa do modelo. Áudio pediria transcrição
-// (Whisper) e documento, extração de texto — cada um é outro caminho.
-const MIDIA_SUPORTADA = new Set(["imagem"]);
+// Imagem é visão nativa do modelo; áudio passa antes por transcrição. Vídeo e
+// documento continuam de fora — cada um pediria outro caminho.
+const MIDIA_SUPORTADA = new Set(["imagem", "audio"]);
 
 const AVISO_POR_TIPO = {
-  audio: "Ainda não consigo ouvir áudio 😅 Pode escrever?",
   video: "Ainda não consigo ver vídeo 😅 Manda uma foto ou escreve?",
   documento: "Ainda não consigo ler documento 😅 Pode escrever o que precisa?",
 };
 
 const PERGUNTA_PADRAO_IMAGEM = "O que tem nesta imagem?";
+
+const AUDIO_SEM_FALA =
+  "Não consegui entender o áudio 😕 Pode repetir ou escrever?";
 
 export class BotService {
   constructor({
@@ -94,6 +96,21 @@ export class BotService {
     if (!midia) return { paraIA: texto, paraHistorico: texto };
 
     const { base64, mimetype } = await this.whatsapp.obterMidiaBase64(midia);
+
+    // Áudio vira texto antes de chegar ao modelo de conversa: o que ele
+    // recebe é indistinguível de alguém que digitou a mesma frase.
+    if (midia.tipo === "audio") {
+      // trim aqui e não só no adaptador: silêncio costuma voltar como espaços
+      // ou string vazia, e a decisão de "não deu para entender" é do núcleo.
+      const transcricao = ((await this.ia.transcrever({ base64, mimetype })) ?? "").trim();
+      if (!transcricao) return { vazio: true };
+      return {
+        paraIA: transcricao,
+        paraHistorico: `[áudio] ${transcricao}`,
+        transcricao,
+      };
+    }
+
     const pergunta = texto || PERGUNTA_PADRAO_IMAGEM;
 
     return {
@@ -121,7 +138,18 @@ export class BotService {
     const inicio = Date.now();
 
     try {
-      const { paraIA, paraHistorico } = await this.prepararConteudo(mensagem);
+      const { paraIA, paraHistorico, transcricao, vazio } = await this.prepararConteudo(mensagem);
+
+      // Áudio sem fala reconhecível: avisa em vez de mandar vazio para a IA.
+      if (vazio) {
+        await this.whatsapp.enviarTexto({
+          telefone,
+          texto: AUDIO_SEM_FALA,
+          digitandoMs: this.digitandoMs(AUDIO_SEM_FALA),
+        });
+        this.metricas.registrar({ tipo: "ignorada", telefone, motivo: "áudio sem fala" });
+        return { tratada: false, motivo: "áudio sem fala" };
+      }
 
       const antesDaIA = Date.now();
       const resposta = await this.ia.responder({
@@ -151,12 +179,14 @@ export class BotService {
         nome,
         pergunta: paraHistorico,
         resposta,
-        temImagem: Boolean(midia),
+        midiaTipo: midia?.tipo ?? null,
+        transcricao,
         iaMs,
         envioMs: Date.now() - antesDoEnvio,
         totalMs: Date.now() - inicio,
       });
 
+      if (transcricao) this.logger.log(`🎤 ${telefone} disse: ${transcricao}`);
       this.logger.log(`🤖 ${telefone} (${iaMs}ms): ${resposta}`);
       return { tratada: true, resposta };
     } catch (erro) {

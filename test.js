@@ -300,7 +300,7 @@ test("o histórico guarda só a marca em texto, nunca a imagem", async () => {
   assert.ok(recebidosPelaIA[1].every((m) => typeof m.content === "string"));
 });
 
-test("áudio recebe aviso e não gasta chamada de IA", async () => {
+test("vídeo recebe aviso e não gasta chamada de IA", async () => {
   const { bot, enviadas, recebidosPelaIA } = montarBotComMidia();
 
   const r = await bot.processarWebhook({
@@ -308,14 +308,75 @@ test("áudio recebe aviso e não gasta chamada de IA", async () => {
     data: {
       key: { remoteJid: "5519999999999@s.whatsapp.net", fromMe: false },
       pushName: "Kelwin",
-      message: { audioMessage: { mimetype: "audio/ogg" } },
+      message: { videoMessage: { mimetype: "video/mp4" } },
     },
   });
 
   assert.equal(r.tratada, false);
-  assert.match(r.motivo, /áudio|audio/);
+  assert.match(r.motivo, /vídeo|video/);
   assert.equal(recebidosPelaIA.length, 0);
-  assert.match(enviadas[0].texto, /ouvir áudio/);
+  assert.match(enviadas[0].texto, /ver vídeo/);
+});
+
+// --- Áudio recebido --------------------------------------------------------
+
+const webhookAudio = () => ({
+  event: "messages.upsert",
+  data: {
+    key: { remoteJid: "5519999999999@s.whatsapp.net", fromMe: false, id: "AUD1" },
+    pushName: "Kelwin",
+    message: { audioMessage: { mimetype: "audio/ogg; codecs=opus" } },
+  },
+});
+
+function montarBotComAudio({ transcricao = "qual a dose de creatina?" } = {}) {
+  const enviadas = [];
+  const recebidosPelaIA = [];
+  const transcritos = [];
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => evolution.interpretarWebhook(c),
+      enviarTexto: async (p) => enviadas.push(p),
+      obterMidiaBase64: async () => ({ base64: "T2dnUw==", mimetype: "audio/ogg" }),
+    },
+    ia: {
+      nome: "falsa",
+      responder: async (p) => { recebidosPelaIA.push(p.mensagens); return "De 3 a 5 g por dia."; },
+      transcrever: async (p) => { transcritos.push(p); return transcricao; },
+    },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    logger: { log() {}, error() {} },
+  });
+  return { bot, enviadas, recebidosPelaIA, transcritos };
+}
+
+test("áudio é transcrito e segue como texto comum", async () => {
+  const { bot, enviadas, recebidosPelaIA, transcritos } = montarBotComAudio();
+
+  const r = await bot.processarWebhook(webhookAudio());
+
+  assert.equal(r.tratada, true);
+  // O modelo de conversa recebe texto puro, não áudio.
+  assert.equal(recebidosPelaIA[0].at(-1).content, "qual a dose de creatina?");
+  assert.equal(transcritos[0].mimetype, "audio/ogg");
+  assert.equal(enviadas[0].texto, "De 3 a 5 g por dia.");
+
+  // No histórico fica marcado que veio de áudio.
+  const historico = await bot.conversas.historico("5519999999999");
+  assert.equal(historico[0].content, "[áudio] qual a dose de creatina?");
+});
+
+test("áudio sem fala vira aviso, sem chamar o modelo de conversa", async () => {
+  const { bot, enviadas, recebidosPelaIA } = montarBotComAudio({ transcricao: "   " });
+
+  const r = await bot.processarWebhook(webhookAudio());
+
+  assert.equal(r.tratada, false);
+  assert.equal(r.motivo, "áudio sem fala");
+  assert.equal(recebidosPelaIA.length, 0);
+  assert.match(enviadas[0].texto, /Não consegui entender o áudio/);
+  assert.deepEqual(await bot.conversas.historico("5519999999999"), []);
 });
 
 // --- Métricas --------------------------------------------------------------

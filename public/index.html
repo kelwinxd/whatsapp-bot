@@ -156,7 +156,7 @@
                 <div class="topo">
                   <span class="tipo ${e.tipo}">${e.tipo}</span>
                   <span>${escapar(e.telefone ?? "")}</span>
-                  ${e.temImagem ? "<span>🖼️</span>" : ""}
+                  ${e.midiaTipo === "imagem" ? "<span>🖼️</span>" : e.midiaTipo === "audio" ? "<span>🎤</span>" : ""}
                   <span style="margin-left:auto">${hora(e.em)}${tempos ? " · " + tempos : ""}</span>
                 </div>
                 ${corpo}
