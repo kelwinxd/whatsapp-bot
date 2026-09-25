@@ -5,6 +5,7 @@ import { EvolutionAdapter } from "./src/adapters/whatsapp/EvolutionAdapter.js";
 import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
 import { BotService } from "./src/core/BotService.js";
 import { montarPromptDeSistema } from "./src/core/prompt.js";
+import { Metricas } from "./src/core/Metricas.js";
 
 // Rode com: npm test
 // Nada aqui toca a rede: os adaptadores de WhatsApp e IA são substituídos por
@@ -315,4 +316,68 @@ test("áudio recebe aviso e não gasta chamada de IA", async () => {
   assert.match(r.motivo, /áudio|audio/);
   assert.equal(recebidosPelaIA.length, 0);
   assert.match(enviadas[0].texto, /ouvir áudio/);
+});
+
+// --- Métricas --------------------------------------------------------------
+
+test("Metricas: agrega contagens e tempos", () => {
+  const m = new Metricas({ maxEventos: 3 });
+  m.registrar({ tipo: "respondida", iaMs: 100, totalMs: 150 });
+  m.registrar({ tipo: "respondida", iaMs: 300, totalMs: 400 });
+  m.registrar({ tipo: "erro", erro: "429" });
+
+  const r = m.resumo();
+  assert.equal(r.respondidas, 2);
+  assert.equal(r.erros, 1);
+  assert.equal(r.iaMedioMs, 200);
+  assert.equal(r.iaP95Ms, 300);
+  assert.equal(r.totalMedioMs, 275);
+
+  // Mais recente primeiro, e o buffer não cresce além do limite.
+  assert.equal(m.eventos[0].tipo, "erro");
+  m.registrar({ tipo: "ignorada", motivo: "grupo" });
+  assert.equal(m.eventos.length, 3);
+});
+
+test("o BotService registra tempos e erros nas métricas", async () => {
+  const metricas = new Metricas();
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async () => {},
+    },
+    ia: { nome: "falsa", responder: async () => "oi!" },
+    conversas: new MemoriaRepo({ maxHistorico: 4 }),
+    metricas,
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.processarWebhook(webhook("oi"));
+  await bot.processarWebhook(webhook("oi", { isGroup: true }));
+
+  const r = metricas.resumo();
+  assert.equal(r.respondidas, 1);
+  assert.equal(r.ignoradas, 1);
+  assert.equal(typeof metricas.eventos.at(-1).iaMs, "number");
+  assert.equal(metricas.eventos.at(-1).resposta, "oi!");
+});
+
+test("enviarManual registra o disparo do painel", async () => {
+  const metricas = new Metricas();
+  const enviadas = [];
+  const bot = new BotService({
+    whatsapp: { nome: "falso", enviarTexto: async (p) => enviadas.push(p) },
+    ia: { nome: "falsa", responder: async () => "" },
+    conversas: new MemoriaRepo({ maxHistorico: 4 }),
+    metricas,
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.enviarManual({ telefone: "5519999999999", texto: "teste" });
+
+  assert.equal(enviadas[0].texto, "teste");
+  assert.equal(metricas.resumo().enviadasManualmente, 1);
+  // Disparo manual não entra no histórico da conversa.
+  assert.deepEqual(await bot.conversas.historico("5519999999999"), []);
 });

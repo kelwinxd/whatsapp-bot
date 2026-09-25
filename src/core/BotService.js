@@ -1,4 +1,5 @@
 import { montarPromptDeSistema } from "./prompt.js";
+import { metricasNulas } from "./Metricas.js";
 
 // Regra do bot, sem saber quem entrega a mensagem nem quem gera o texto:
 // recebe as três portas prontas pelo construtor (injeção de dependência).
@@ -23,12 +24,38 @@ const AVISO_POR_TIPO = {
 const PERGUNTA_PADRAO_IMAGEM = "O que tem nesta imagem?";
 
 export class BotService {
-  constructor({ whatsapp, ia, conversas, prompt = { perfil: "suplementos" }, logger = console }) {
+  constructor({
+    whatsapp,
+    ia,
+    conversas,
+    prompt = { perfil: "suplementos" },
+    metricas = metricasNulas,
+    logger = console,
+  }) {
     this.whatsapp = whatsapp;
     this.ia = ia;
     this.conversas = conversas;
     this.prompt = prompt;
+    this.metricas = metricas;
     this.logger = logger;
+  }
+
+  // Envio avulso, pedido pelo painel: não passa pela IA nem pelo histórico.
+  async enviarManual({ telefone, texto }) {
+    const inicio = Date.now();
+    try {
+      await this.whatsapp.enviarTexto({ telefone, texto, digitandoMs: this.digitandoMs(texto) });
+      this.metricas.registrar({
+        tipo: "envio-manual",
+        telefone,
+        resposta: texto,
+        totalMs: Date.now() - inicio,
+      });
+      return { enviada: true };
+    } catch (erro) {
+      this.metricas.registrar({ tipo: "erro", telefone, erro: erro.message });
+      throw erro;
+    }
   }
 
   // Tempo de "digitando..." proporcional ao tamanho do texto, em ms. Cada
@@ -50,7 +77,10 @@ export class BotService {
     if (!mensagem) return { tratada: false, motivo: "payload sem texto" };
 
     const ignorar = this.deveIgnorar(mensagem);
-    if (ignorar) return { tratada: false, motivo: ignorar };
+    if (ignorar) {
+      this.metricas.registrar({ tipo: "ignorada", telefone: mensagem.telefone, motivo: ignorar });
+      return { tratada: false, motivo: ignorar };
+    }
 
     return this.responder(mensagem);
   }
@@ -83,12 +113,17 @@ export class BotService {
       await this.whatsapp
         .enviarTexto({ telefone, texto: aviso, digitandoMs: this.digitandoMs(aviso) })
         .catch((e) => this.logger.error("❌ Falha ao avisar sobre a mídia:", e));
-      return { tratada: false, motivo: `mídia não suportada: ${midia.tipo}` };
+      const motivo = `mídia não suportada: ${midia.tipo}`;
+      this.metricas.registrar({ tipo: "ignorada", telefone, motivo });
+      return { tratada: false, motivo };
     }
+
+    const inicio = Date.now();
 
     try {
       const { paraIA, paraHistorico } = await this.prepararConteudo(mensagem);
 
+      const antesDaIA = Date.now();
       const resposta = await this.ia.responder({
         sistema: montarPromptDeSistema({ nome, ...this.prompt }),
         mensagens: [
@@ -96,22 +131,43 @@ export class BotService {
           { role: "user", content: paraIA },
         ],
       });
+      const iaMs = Date.now() - antesDaIA;
 
       // Só guarda depois de dar certo: falha na IA não deixa a pergunta órfã
       // no histórico.
       await this.conversas.acrescentar(telefone, { role: "user", content: paraHistorico });
       await this.conversas.acrescentar(telefone, { role: "assistant", content: resposta });
 
+      const antesDoEnvio = Date.now();
       await this.whatsapp.enviarTexto({
         telefone,
         texto: resposta,
         digitandoMs: this.digitandoMs(resposta),
       });
 
-      this.logger.log(`🤖 ${telefone}: ${resposta}`);
+      this.metricas.registrar({
+        tipo: "respondida",
+        telefone,
+        nome,
+        pergunta: paraHistorico,
+        resposta,
+        temImagem: Boolean(midia),
+        iaMs,
+        envioMs: Date.now() - antesDoEnvio,
+        totalMs: Date.now() - inicio,
+      });
+
+      this.logger.log(`🤖 ${telefone} (${iaMs}ms): ${resposta}`);
       return { tratada: true, resposta };
     } catch (erro) {
       this.logger.error("❌ Erro ao responder:", erro);
+      this.metricas.registrar({
+        tipo: "erro",
+        telefone,
+        pergunta: texto,
+        erro: erro.message,
+        totalMs: Date.now() - inicio,
+      });
       // Silêncio é o pior resultado para quem está do outro lado: avisa que
       // deu errado, mas sem deixar uma falha no aviso derrubar o fluxo.
       await this.whatsapp
