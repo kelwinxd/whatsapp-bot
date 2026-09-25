@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Painel do bot</title>
+    <style>
+      :root {
+        --fundo: #0f1115;
+        --cartao: #171a21;
+        --borda: #252a35;
+        --texto: #e6e8eb;
+        --apagado: #8b93a1;
+        --verde: #3ddc84;
+        --vermelho: #ff6b6b;
+        --amarelo: #ffd166;
+        --azul: #5aa9e6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px 16px 48px;
+        background: var(--fundo);
+        color: var(--texto);
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .container { max-width: 900px; margin: 0 auto; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--apagado); margin: 28px 0 10px; }
+      .sub { color: var(--apagado); font-size: 13px; margin: 0 0 20px; }
+      .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px; padding: 14px 16px; }
+      .linha { display: flex; flex-wrap: wrap; gap: 10px; }
+      .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+      .metrica .valor { font-size: 22px; font-weight: 600; }
+      .metrica .rotulo { color: var(--apagado); font-size: 12px; }
+      .etiqueta { display: inline-flex; align-items: center; gap: 6px; background: #1e222b; border: 1px solid var(--borda); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--apagado); }
+      .ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--apagado); }
+      .ponto.on { background: var(--verde); }
+      .ponto.off { background: var(--vermelho); }
+      input, textarea, button {
+        font: inherit; color: var(--texto); background: #11141a;
+        border: 1px solid var(--borda); border-radius: 8px; padding: 9px 11px;
+      }
+      input, textarea { width: 100%; }
+      textarea { resize: vertical; min-height: 64px; }
+      button { cursor: pointer; background: #1e222b; }
+      button:hover { border-color: #39414f; }
+      button.primario { background: var(--verde); color: #06240f; border-color: transparent; font-weight: 600; }
+      button:disabled { opacity: .5; cursor: progress; }
+      .campo { margin-bottom: 10px; }
+      .campo label { display: block; font-size: 12px; color: var(--apagado); margin-bottom: 4px; }
+      .prontas button { font-size: 13px; }
+      .evento { border-bottom: 1px solid var(--borda); padding: 10px 0; }
+      .evento:last-child { border-bottom: 0; }
+      .evento .topo { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--apagado); margin-bottom: 4px; }
+      .evento .pergunta { color: var(--apagado); }
+      .evento .resposta { white-space: pre-wrap; }
+      .tipo { font-weight: 600; }
+      .tipo.respondida { color: var(--verde); }
+      .tipo.erro { color: var(--vermelho); }
+      .tipo.ignorada { color: var(--amarelo); }
+      .tipo\.envio-manual, .tipo.envio-manual { color: var(--azul); }
+      .vazio { color: var(--apagado); font-size: 13px; }
+      #aviso { margin-top: 10px; font-size: 13px; min-height: 18px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Painel do bot</h1>
+      <p class="sub">Atualiza a cada 3 segundos. Uso local.</p>
+
+      <div class="linha" id="etiquetas"></div>
+
+      <h2>Métricas</h2>
+      <div class="grade" id="metricas"></div>
+
+      <h2>Disparar mensagem</h2>
+      <div class="cartao">
+        <div class="campo">
+          <label for="telefone">Telefone (DDI + DDD + número)</label>
+          <input id="telefone" inputmode="numeric" placeholder="5519999999999" />
+        </div>
+        <div class="campo">
+          <label for="texto">Mensagem</label>
+          <textarea id="texto" placeholder="Escreva aqui..."></textarea>
+        </div>
+        <div class="linha prontas" id="prontas"></div>
+        <div class="linha" style="margin-top: 10px">
+          <button class="primario" id="enviar">Enviar</button>
+        </div>
+        <div id="aviso"></div>
+      </div>
+
+      <h2>Mensagens e eventos</h2>
+      <div class="cartao" id="eventos"><p class="vazio">Carregando...</p></div>
+    </div>
+
+    <script>
+      const PRONTAS = [
+        "Oi! Tudo bem?",
+        "Teste do painel 🤖",
+        "Manda uma foto que eu te digo o que é",
+        "Qual a dose usual de creatina?",
+      ];
+
+      const $ = (id) => document.getElementById(id);
+      const ms = (v) => (v == null ? "—" : v >= 1000 ? (v / 1000).toFixed(1) + "s" : v + "ms");
+      const hora = (iso) => new Date(iso).toLocaleTimeString("pt-BR");
+      const escapar = (s) =>
+        String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+      function pintarEtiquetas(e, online) {
+        $("etiquetas").innerHTML = [
+          `<span class="etiqueta"><span class="ponto ${online ? "on" : "off"}"></span>${online ? "bot no ar" : "bot fora do ar"}</span>`,
+          `<span class="etiqueta">📱 ${escapar(e.whatsapp ?? "?")}</span>`,
+          `<span class="etiqueta">🧠 ${escapar(e.ia ?? "?")}</span>`,
+          `<span class="etiqueta">💬 prompt: ${escapar(e.prompt ?? "?")}</span>`,
+        ].join("");
+      }
+
+      function pintarMetricas(r) {
+        const itens = [
+          ["Respondidas", r.respondidas ?? 0],
+          ["Erros", r.erros ?? 0],
+          ["Ignoradas", r.ignoradas ?? 0],
+          ["Disparos manuais", r.enviadasManualmente ?? 0],
+          ["IA média", ms(r.iaMedioMs)],
+          ["IA p95", ms(r.iaP95Ms)],
+          ["Total médio", ms(r.totalMedioMs)],
+        ];
+        $("metricas").innerHTML = itens
+          .map(
+            ([rotulo, valor]) =>
+              `<div class="cartao metrica"><div class="valor">${escapar(valor)}</div><div class="rotulo">${rotulo}</div></div>`,
+          )
+          .join("");
+      }
+
+      function pintarEventos(eventos) {
+        if (!eventos?.length) {
+          $("eventos").innerHTML = '<p class="vazio">Nada ainda. Manda uma mensagem para o bot.</p>';
+          return;
+        }
+        $("eventos").innerHTML = eventos
+          .map((e) => {
+            const tempos = [e.iaMs && `IA ${ms(e.iaMs)}`, e.envioMs && `envio ${ms(e.envioMs)}`, e.totalMs && `total ${ms(e.totalMs)}`]
+              .filter(Boolean)
+              .join(" · ");
+            const corpo =
+              e.tipo === "erro"
+                ? `<div class="resposta" style="color:var(--vermelho)">${escapar(e.erro)}</div>`
+                : e.tipo === "ignorada"
+                  ? `<div class="pergunta">${escapar(e.motivo)}</div>`
+                  : `${e.pergunta ? `<div class="pergunta">↪ ${escapar(e.pergunta)}</div>` : ""}<div class="resposta">${escapar(e.resposta)}</div>`;
+            return `<div class="evento">
+                <div class="topo">
+                  <span class="tipo ${e.tipo}">${e.tipo}</span>
+                  <span>${escapar(e.telefone ?? "")}</span>
+                  ${e.temImagem ? "<span>🖼️</span>" : ""}
+                  <span style="margin-left:auto">${hora(e.em)}${tempos ? " · " + tempos : ""}</span>
+                </div>
+                ${corpo}
+              </div>`;
+          })
+          .join("");
+      }
+
+      let primeiraCarga = true;
+
+      async function atualizar() {
+        try {
+          const estado = await (await fetch("/api/estado")).json();
+          pintarEtiquetas(estado, true);
+          pintarMetricas(estado.resumo ?? {});
+          pintarEventos(estado.eventos);
+          if (primeiraCarga && estado.numeroTeste && !$("telefone").value) {
+            $("telefone").value = estado.numeroTeste;
+          }
+          primeiraCarga = false;
+        } catch {
+          pintarEtiquetas({}, false);
+        }
+      }
+
+      $("prontas").innerHTML = PRONTAS.map(
+        (t, i) => `<button data-i="${i}">${escapar(t.length > 28 ? t.slice(0, 28) + "…" : t)}</button>`,
+      ).join("");
+      $("prontas").addEventListener("click", (ev) => {
+        const i = ev.target.dataset?.i;
+        if (i != null) $("texto").value = PRONTAS[i];
+      });
+
+      $("enviar").addEventListener("click", async () => {
+        const botao = $("enviar");
+        const aviso = $("aviso");
+        botao.disabled = true;
+        aviso.textContent = "Enviando...";
+        aviso.style.color = "var(--apagado)";
+        try {
+          const resposta = await fetch("/api/enviar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ telefone: $("telefone").value, texto: $("texto").value }),
+          });
+          const dados = await resposta.json();
+          if (!resposta.ok) throw new Error(dados.erro ?? "falhou");
+          aviso.textContent = "✅ Enviada para " + dados.telefone;
+          aviso.style.color = "var(--verde)";
+          $("texto").value = "";
+          atualizar();
+        } catch (erro) {
+          aviso.textContent = "❌ " + erro.message;
+          aviso.style.color = "var(--vermelho)";
+        } finally {
+          botao.disabled = false;
+        }
+      });
+
+      atualizar();
+      setInterval(atualizar, 3000);
+    </script>
+  </body>
+</html>
