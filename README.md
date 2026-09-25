@@ -58,6 +58,20 @@ npm test
 
 `GET /health` mostra quais provedores estão ativos.
 
+## Painel
+
+<http://localhost:3000/painel> — página em HTML puro, servida pelo próprio
+bot, que mostra o estado, as métricas da sessão (respondidas, erros, tempo
+médio e p95 da IA), o feed de mensagens e eventos, e um formulário para
+disparar mensagem com atalhos de texto pronto.
+
+Rotas que ela consome: `GET /api/estado` e `POST /api/enviar`.
+
+As métricas ficam em memória e zeram no restart. **Não tem autenticação** — é
+para uso local, e `/api/enviar` manda mensagem de verdade. Numa VPS, isso fica
+atrás do firewall ou de um túnel SSH (`ssh -L 3000:localhost:3000`), nunca
+aberto na internet.
+
 Para testar o envio sem esperar alguém mandar mensagem, preencha `NUMBER_TEST`
 no `.env` e use:
 
