@@ -78,6 +78,8 @@ export const config = {
     maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? 300),
     // whisper-1 custa US$ 0,006/min; gpt-4o-mini-transcribe, metade disso.
     modeloTranscricao: process.env.OPENAI_TRANSCRIBE_MODEL ?? "whisper-1",
+    // Usado pelo RAG. text-embedding-3-small custa US$ 0,02 por 1M de tokens.
+    modeloEmbedding: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
   },
 
   imagem: {
@@ -112,6 +114,26 @@ export const config = {
   },
 
   agenda: carregarAgenda(),
+
+  // RAG: responder com base em documentos indexados. "nenhum" desliga.
+  rag: {
+    provedor: process.env.RAG_PROVIDER ?? "nenhum", // nenhum | memoria
+    arquivo: process.env.RAG_ARQUIVO ?? "dados/base.json",
+    // Distância máxima para o trecho contar como relevante. Medido com o
+    // text-embedding-3-small e pedaços de ~900 caracteres: pergunta dentro do
+    // assunto fica em 0,45–0,55 e fora em 0,74–0,92, então 0,65 separa os dois
+    // casos com folga. O painel tem um campo para conferir isso na sua base.
+    limiar: Number(process.env.RAG_LIMIAR ?? 0.65),
+    trechos: Number(process.env.RAG_TRECHOS ?? 5),
+    // ~4 caracteres por token: 900 ≈ 225 tokens por pedaço. Pedaço menor
+    // separa melhor o relevante do irrelevante — medido: com 3.200 a distância
+    // de uma pergunta do assunto subia para 0,64, quase encostando no 0,74 de
+    // uma pergunta fora dele.
+    pedaco: {
+      tamanho: Number(process.env.RAG_TAMANHO_PEDACO ?? 900),
+      sobreposicao: Number(process.env.RAG_SOBREPOSICAO ?? 150),
+    },
+  },
 
   prompt: {
     // suplementos | whatsapp | puro (ver src/core/prompt.js)

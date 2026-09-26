@@ -21,13 +21,14 @@ const extensaoDe = (mimetype = "") =>
   EXTENSAO_POR_MIME[mimetype.split(";")[0].trim()] ?? "ogg";
 
 export class OpenAIAdapter extends ProvedorIA {
-  constructor({ apiKey, modelo, maxTokens, modeloTranscricao }) {
+  constructor({ apiKey, modelo, maxTokens, modeloTranscricao, modeloEmbedding }) {
     super();
     exigirVariaveis(["OPENAI_API_KEY"], { OPENAI_API_KEY: apiKey });
     this.apiKey = apiKey;
     this.modelo = modelo;
     this.maxTokens = maxTokens;
     this.modeloTranscricao = modeloTranscricao;
+    this.modeloEmbedding = modeloEmbedding;
   }
 
   get nome() {
@@ -113,6 +114,35 @@ export class OpenAIAdapter extends ProvedorIA {
     return {
       texto: (dados.text ?? "").trim(),
       uso: { modelo: this.modeloTranscricao, segundos: dados.duration ?? 0 },
+    };
+  }
+
+  async vetorizar(textos) {
+    const resposta = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      // A API aceita uma lista, então indexar um documento inteiro é uma
+      // chamada só — não uma por pedaço.
+      body: JSON.stringify({ model: this.modeloEmbedding, input: textos }),
+    });
+
+    if (!resposta.ok) {
+      throw new Error(
+        `OpenAI respondeu ${resposta.status} ao vetorizar: ${await resposta.text()}`,
+      );
+    }
+
+    const dados = await resposta.json();
+    return {
+      // A ordem do retorno não é garantida; o campo index é que manda.
+      vetores: dados.data
+        .slice()
+        .sort((a, b) => a.index - b.index)
+        .map((d) => d.embedding),
+      uso: { modelo: this.modeloEmbedding, tokens: dados.usage?.total_tokens ?? 0 },
     };
   }
 }

@@ -89,6 +89,16 @@ export class ProvedorIA {
   }
 
   /**
+   * Vetoriza textos para busca semântica (embeddings).
+   *
+   * @param {string[]} textos
+   * @returns {Promise<{ vetores: number[][], uso?: object }>}
+   */
+  async vetorizar(textos) {
+    throw new Error(`${this.nome} não implementou vetorizar()`);
+  }
+
+  /**
    * Transcreve um áudio para texto.
    *
    * @param {{ base64: string, mimetype: string }} params
@@ -115,5 +125,37 @@ export class RepositorioDeConversas {
 
   async limpar(telefone) {
     throw new Error(`${this.nome} não implementou limpar()`);
+  }
+}
+
+/**
+ * Base de conhecimento consultada antes de responder (RAG). Guarda pedaços de
+ * documento com seus vetores e devolve os mais próximos de uma pergunta.
+ */
+export class BaseDeConhecimento {
+  get nome() {
+    return this.constructor.name;
+  }
+
+  /** @param {{ nome: string, texto: string }} documento */
+  async indexar(documento) {
+    throw new Error(`${this.nome} não implementou indexar()`);
+  }
+
+  /**
+   * Trechos mais próximos da pergunta, já cortados por relevância.
+   *
+   * @returns {Promise<Array<{ conteudo: string, documento: string, posicao: number, distancia: number }>>}
+   */
+  async buscar(pergunta, k) {
+    throw new Error(`${this.nome} não implementou buscar()`);
+  }
+
+  async documentos() {
+    throw new Error(`${this.nome} não implementou documentos()`);
+  }
+
+  async remover(nome) {
+    throw new Error(`${this.nome} não implementou remover()`);
   }
 }

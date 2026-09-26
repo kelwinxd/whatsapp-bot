@@ -16,6 +16,12 @@ export const PRECOS_USD = {
     "gpt-4o": { entrada: 2.5, saida: 10.0 },
   },
 
+  // Por 1 milhão de tokens vetorizados (RAG).
+  embedding: {
+    "text-embedding-3-small": 0.02,
+    "text-embedding-3-large": 0.13,
+  },
+
   // Por minuto de áudio.
   transcricao: {
     "whisper-1": 0.006,
@@ -55,6 +61,12 @@ export function custoDeTexto({ modelo, tokensEntrada = 0, tokensSaida = 0 }) {
   const preco = PRECOS_USD.texto[modelo];
   if (!preco) return null;
   return porMilhao(tokensEntrada, preco.entrada) + porMilhao(tokensSaida, preco.saida);
+}
+
+export function custoDeEmbedding({ modelo, tokens = 0 }) {
+  const preco = PRECOS_USD.embedding[modelo];
+  if (preco === undefined) return null;
+  return porMilhao(tokens, preco);
 }
 
 export function custoDeTranscricao({ modelo, segundos = 0 }) {
