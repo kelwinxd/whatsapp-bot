@@ -7,7 +7,7 @@ import { perfisDisponiveis } from "./core/prompt.js";
 
 const PASTA_PUBLICA = fileURLToPath(new URL("../public", import.meta.url));
 
-export function criarServidor({ bot, metricas, config = {}, logger = console }) {
+export function criarServidor({ bot, metricas, agenda, config = {}, logger = console }) {
   const app = express();
   app.use(express.json({ limit: "10mb" }));
 
@@ -53,10 +53,25 @@ export function criarServidor({ bot, metricas, config = {}, logger = console }) 
       ia: bot.ia.nome,
       prompt: bot.prompt.textoCustomizado ? "customizado" : bot.prompt.perfil,
       numeroTeste: config.numeroTeste ?? null,
+      tarefas: agenda?.listar() ?? [],
       resumo: metricas.resumo(),
       eventos: metricas.eventos,
     }),
   );
+
+  // Dispara uma tarefa agora, sem esperar o horário — é assim que se testa
+  // uma tarefa nova sem mexer no cron.
+  app.post("/api/tarefas/:nome/executar", async (req, res) => {
+    if (!agenda) return res.status(404).json({ erro: "agenda não configurada" });
+
+    try {
+      const { resposta } = await agenda.executar(req.params.nome);
+      res.json({ executada: true, resposta });
+    } catch (erro) {
+      logger.error("❌ Erro ao executar tarefa:", erro);
+      res.status(400).json({ erro: erro.message });
+    }
+  });
 
   app.post("/api/enviar", async (req, res) => {
     const telefone = String(req.body?.telefone ?? config.numeroTeste ?? "").replace(/\D/g, "");

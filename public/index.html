@@ -59,6 +59,13 @@
       .tipo.respondida { color: var(--verde); }
       .tipo.erro { color: var(--vermelho); }
       .tipo.ignorada { color: var(--amarelo); }
+      .tipo.agendada { color: var(--azul); }
+      .tarefa { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--borda); padding: 10px 0; }
+      .tarefa:last-child { border-bottom: 0; }
+      .tarefa .nome { font-weight: 600; }
+      .tarefa .quando { color: var(--apagado); font-size: 12px; font-family: ui-monospace, monospace; }
+      .tarefa .desligada { color: var(--apagado); font-size: 12px; }
+      .tarefa button { margin-left: auto; font-size: 13px; }
       .tipo\.envio-manual, .tipo.envio-manual { color: var(--azul); }
       .vazio { color: var(--apagado); font-size: 13px; }
       #aviso { margin-top: 10px; font-size: 13px; min-height: 18px; }
@@ -90,6 +97,9 @@
         </div>
         <div id="aviso"></div>
       </div>
+
+      <h2>Agenda</h2>
+      <div class="cartao" id="tarefas"><p class="vazio">Carregando...</p></div>
 
       <h2>Mensagens e eventos</h2>
       <div class="cartao" id="eventos"><p class="vazio">Carregando...</p></div>
@@ -136,6 +146,49 @@
           .join("");
       }
 
+      function pintarTarefas(tarefas) {
+        if (!tarefas?.length) {
+          $("tarefas").innerHTML =
+            '<p class="vazio">Nenhuma tarefa. Crie um agenda.json a partir do agenda.example.json.</p>';
+          return;
+        }
+        $("tarefas").innerHTML = tarefas
+          .map(
+            (t) => `<div class="tarefa">
+                <span class="ponto ${t.agendada ? "on" : "off"}"></span>
+                <span>
+                  <span class="nome">${escapar(t.nome)}</span>
+                  <span class="quando">${escapar(t.cron)}</span>
+                  ${t.fonte ? "<span class=\"quando\">· com fonte</span>" : ""}
+                  ${t.ativa ? "" : '<span class="desligada">· desativada</span>'}
+                  <br /><span class="quando">→ ${escapar(t.telefone)}</span>
+                </span>
+                <button data-tarefa="${escapar(t.nome)}">Executar agora</button>
+              </div>`,
+          )
+          .join("");
+      }
+
+      $("tarefas").addEventListener("click", async (ev) => {
+        const nome = ev.target.dataset?.tarefa;
+        if (!nome) return;
+        const botao = ev.target;
+        const rotuloOriginal = botao.textContent;
+        botao.disabled = true;
+        botao.textContent = "Executando...";
+        try {
+          const r = await fetch(`/api/tarefas/${encodeURIComponent(nome)}/executar`, { method: "POST" });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.erro ?? "falhou");
+          botao.textContent = "✅ Enviada";
+          atualizar();
+        } catch (erro) {
+          botao.textContent = "❌ " + erro.message;
+        } finally {
+          setTimeout(() => { botao.disabled = false; botao.textContent = rotuloOriginal; }, 2500);
+        }
+      });
+
       function pintarEventos(eventos) {
         if (!eventos?.length) {
           $("eventos").innerHTML = '<p class="vazio">Nada ainda. Manda uma mensagem para o bot.</p>';
@@ -156,6 +209,7 @@
                 <div class="topo">
                   <span class="tipo ${e.tipo}">${e.tipo}</span>
                   <span>${escapar(e.telefone ?? "")}</span>
+                  ${e.tarefa ? `<span>⏰ ${escapar(e.tarefa)}</span>` : ""}
                   ${e.midiaTipo === "imagem" ? "<span>🖼️</span>" : e.midiaTipo === "audio" ? "<span>🎤</span>" : ""}
                   <span style="margin-left:auto">${hora(e.em)}${tempos ? " · " + tempos : ""}</span>
                 </div>
@@ -172,6 +226,7 @@
           const estado = await (await fetch("/api/estado")).json();
           pintarEtiquetas(estado, true);
           pintarMetricas(estado.resumo ?? {});
+          pintarTarefas(estado.tarefas);
           pintarEventos(estado.eventos);
           if (primeiraCarga && estado.numeroTeste && !$("telefone").value) {
             $("telefone").value = estado.numeroTeste;
