@@ -32,6 +32,21 @@ function validarDetalhe(valor) {
   return limpo;
 }
 
+// Exemplo: CONTATOS="Kelwin=5519993723677;Mãe=5511988887777"
+function lerContatos(bruto, numeroTeste) {
+  const contatos = String(bruto ?? "")
+    .split(/[;,]/)
+    .map((par) => par.split("="))
+    .filter(([nome, numero]) => nome?.trim() && numero?.trim())
+    .map(([nome, numero]) => ({ nome: nome.trim(), numero: numero.replace(/\D/g, "") }));
+
+  // Sem CONTATOS configurado, o número de teste já serve de atalho.
+  if (contatos.length === 0 && numeroTeste) {
+    return [{ nome: "Teste", numero: String(numeroTeste).replace(/\D/g, "") }];
+  }
+  return contatos;
+}
+
 export const config = {
   porta: Number(process.env.PORT ?? 3000),
 
@@ -78,6 +93,10 @@ export const config = {
   // Número usado nos testes manuais de envio (npm run enviar). Fica no .env
   // para não versionar telefone de ninguém.
   numeroTeste: process.env.NUMBER_TEST,
+
+  // Atalhos de telefone para o painel, no formato "Nome=numero", separados por
+  // ; ou vírgula. Ficam no .env pelo mesmo motivo do numeroTeste.
+  contatos: lerContatos(process.env.CONTATOS, process.env.NUMBER_TEST),
 
   conversa: {
     // Mensagens guardadas por contato (usuário + bot somados).

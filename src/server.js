@@ -54,6 +54,7 @@ export function criarServidor({ bot, metricas, agenda, config = {}, logger = con
       ia: bot.ia.nome,
       prompt: bot.prompt.textoCustomizado ? "customizado" : bot.prompt.perfil,
       numeroTeste: config.numeroTeste ?? null,
+      contatos: config.contatos ?? [],
       imagemDetalhe: bot.imagem?.detalhe ?? null,
       tarefas: agenda?.listar() ?? [],
       resumo: metricas.resumo(),
