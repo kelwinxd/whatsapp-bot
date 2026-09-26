@@ -506,3 +506,48 @@ test("a instrução de quebra só aparece quando o máximo é maior que 1", () =
   const unica = montarPromptDeSistema({ nome: "K", perfil: "whatsapp", limitePalavras: 60, maxMensagens: 1 });
   assert.doesNotMatch(unica, /mensagens curtas/);
 });
+
+// --- Ritmo de digitação ----------------------------------------------------
+
+test("digitandoMs usa o ritmo configurado, com variação e limites", () => {
+  const semVariacao = (r) => new BotService({ whatsapp: {}, ia: {}, conversas: {}, ritmo: r, aleatorio: () => 0.5 });
+
+  // 200 caracteres a 45ms = 9s, limitado ao teto.
+  assert.equal(semVariacao({}).digitandoMs("x".repeat(200)), 5000);
+  // 60 caracteres = 2,7s, dentro da faixa.
+  assert.equal(semVariacao({}).digitandoMs("x".repeat(60)), 2700);
+  // Texto curto respeita o mínimo.
+  assert.equal(semVariacao({}).digitandoMs("oi"), 1000);
+
+  // A variação move o tempo para as pontas: aleatorio()=1 é +15%, 0 é -15%.
+  const base = new BotService({ whatsapp: {}, ia: {}, conversas: {}, aleatorio: () => 1 });
+  const menor = new BotService({ whatsapp: {}, ia: {}, conversas: {}, aleatorio: () => 0 });
+  assert.equal(base.digitandoMs("x".repeat(60)), Math.round(2700 * 1.15));
+  assert.equal(menor.digitandoMs("x".repeat(60)), Math.round(2700 * 0.85));
+
+  // Ritmo pode ser sobrescrito pela configuração.
+  assert.equal(semVariacao({ msPorCaractere: 10, minimoMs: 0 }).digitandoMs("x".repeat(30)), 300);
+});
+
+test("pausa entre as mensagens, mas não antes da primeira", async () => {
+  const pausas = [];
+  const enviadas = [];
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async (p) => enviadas.push(p.texto),
+    },
+    ia: { nome: "falsa", responder: async () => "Um.\n---\nDois.\n---\nTrês." },
+    conversas: new MemoriaRepo({ maxHistorico: 8 }),
+    prompt: { perfil: "whatsapp", maxMensagens: 3 },
+    ritmo: { pausaMs: 800 },
+    dormir: async (ms) => pausas.push(ms),
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.processarWebhook(webhook("oi"));
+
+  assert.equal(enviadas.length, 3);
+  assert.deepEqual(pausas, [800, 800]);
+});

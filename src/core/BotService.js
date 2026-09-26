@@ -5,13 +5,26 @@ import { metricasNulas } from "./Metricas.js";
 // recebe as três portas prontas pelo construtor (injeção de dependência).
 // É o que torna o fluxo testável sem rede — basta passar dublês.
 
-// Ritmo do "digitando...". Antes era 100ms por caractere com teto de 15s, o
-// que fazia a pessoa esperar um tempo absurdo antes de cada mensagem. Com
-// resposta picada isso somaria por mensagem, então o ritmo é mais rápido e o
-// teto, curto.
-const MS_POR_CARACTERE = 25;
-const DIGITANDO_MINIMO_MS = 800;
-const DIGITANDO_MAXIMO_MS = 3_000;
+// Ritmo do "digitando...". Referência real: pessoa média digita ~40 palavras
+// por minuto (≈300ms por caractere), quem é rápido faz ~80 (≈150ms). Só que
+// mensagem de 130 caracteres nesse ritmo daria 20s de espera, e com resposta
+// picada isso soma por mensagem — a conversa fica insuportável.
+//
+// 45ms por caractere é o meio termo: dá ~265 palavras por minuto, rápido além
+// do humano, mas o tempo varia com o tamanho da frase (2s, 4s, 5s), que é o
+// que cria a sensação de alguém digitando. Teto em 5s para não saturar todas
+// as mensagens no mesmo valor — saturado, o ritmo volta a parecer robô.
+const RITMO_PADRAO = {
+  msPorCaractere: 45,
+  minimoMs: 1_000,
+  maximoMs: 5_000,
+  // Intervalo entre uma mensagem e a próxima, antes de o "digitando..."
+  // aparecer de novo: é o tempo em que a pessoa pensaria na frase seguinte.
+  pausaMs: 800,
+  // Variação de ±15% para o tempo não ser idêntico a cada frase do mesmo
+  // tamanho — repetição exata é o que denuncia robô.
+  variacao: 0.15,
+};
 
 // Uma linha contendo só o marcador (aceita espaços e mais hifens em volta).
 // String.raw porque num template comum o \s viraria um "s" solto e o \n, uma
@@ -44,14 +57,21 @@ export class BotService {
     conversas,
     prompt = { perfil: "suplementos" },
     metricas = metricasNulas,
+    ritmo = {},
     logger = console,
+    // Injetáveis para o teste não depender de sorteio nem esperar de verdade.
+    aleatorio = Math.random,
+    dormir = (ms) => new Promise((r) => setTimeout(r, ms)),
   }) {
     this.whatsapp = whatsapp;
     this.ia = ia;
     this.conversas = conversas;
     this.prompt = prompt;
     this.metricas = metricas;
+    this.ritmo = { ...RITMO_PADRAO, ...ritmo };
     this.logger = logger;
+    this.aleatorio = aleatorio;
+    this.dormir = dormir;
   }
 
   // Envio avulso, pedido pelo painel: não passa pela IA nem pelo histórico.
@@ -72,13 +92,15 @@ export class BotService {
     }
   }
 
-  // Tempo de "digitando..." proporcional ao tamanho do texto, em ms. Cada
-  // adaptador converte para a unidade da sua API.
+  // Tempo de "digitando..." pelo tamanho do texto, em ms. Cada adaptador
+  // converte para a unidade da sua API.
   digitandoMs(texto) {
-    return Math.min(
-      DIGITANDO_MAXIMO_MS,
-      Math.max(DIGITANDO_MINIMO_MS, texto.length * MS_POR_CARACTERE),
-    );
+    const { msPorCaractere, minimoMs, maximoMs, variacao } = this.ritmo;
+    // (aleatorio() - 0.5) * 2 dá algo entre -1 e 1; multiplicado pela variação,
+    // vira o desvio percentual aplicado ao tempo.
+    const desvio = 1 + (this.aleatorio() - 0.5) * 2 * variacao;
+    const bruto = texto.length * msPorCaractere * desvio;
+    return Math.round(Math.min(maximoMs, Math.max(minimoMs, bruto)));
   }
 
   // Divide no marcador que o modelo inseriu. O excedente é juntado na última
@@ -212,7 +234,9 @@ export class BotService {
       // Sequencial de propósito: a Evolution só envia depois do "digitando...",
       // então esperar cada uma é o que cria o ritmo de conversa. Em paralelo,
       // as mensagens chegariam juntas e fora de ordem.
-      for (const parte of partes) {
+      for (const [indice, parte] of partes.entries()) {
+        // Antes da primeira não cabe pausa: a espera da IA já fez esse papel.
+        if (indice > 0) await this.dormir(this.ritmo.pausaMs);
         await this.whatsapp.enviarTexto({
           telefone,
           texto: parte,

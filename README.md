@@ -127,6 +127,20 @@ marcador, os dois formatos são aceitos.
 Controle em `RESPOSTA_MAX_MENSAGENS` (1 volta ao comportamento de mensagem
 única). O excedente é juntado na última mensagem, nunca descartado.
 
+## Ritmo de digitação
+
+O "digitando..." dura conforme o tamanho da mensagem: 45ms por caractere, com
+piso de 1s, teto de 5s e variação de ±15% para o tempo não repetir. Entre uma
+mensagem e a próxima há uma pausa de 800ms — o tempo em que a pessoa pensaria
+na frase seguinte.
+
+Digitação humana real fica entre 150 e 300ms por caractere, mas nesse ritmo uma
+frase de 130 caracteres daria 20s de espera, somando por mensagem. 45ms é o
+meio termo: varia com o tamanho, sem virar espera chata.
+
+Ajuste em `DIGITANDO_MS_POR_CARACTERE`, `DIGITANDO_MIN_MS`,
+`DIGITANDO_MAX_MS` e `PAUSA_ENTRE_MENSAGENS_MS`.
+
 ## Trocando de provedor de WhatsApp
 
 No `.env`: `WHATSAPP_PROVIDER=zapi` ou `WHATSAPP_PROVIDER=evolution`.

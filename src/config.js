@@ -46,6 +46,14 @@ export const config = {
     maxHistorico: Number(process.env.MAX_HISTORICO ?? 10),
   },
 
+  // Ritmo do "digitando...". Padrões em src/core/BotService.js.
+  ritmo: {
+    msPorCaractere: Number(process.env.DIGITANDO_MS_POR_CARACTERE ?? 45),
+    minimoMs: Number(process.env.DIGITANDO_MIN_MS ?? 1000),
+    maximoMs: Number(process.env.DIGITANDO_MAX_MS ?? 5000),
+    pausaMs: Number(process.env.PAUSA_ENTRE_MENSAGENS_MS ?? 800),
+  },
+
   prompt: {
     // suplementos | whatsapp | puro (ver src/core/prompt.js)
     perfil: process.env.PROMPT_PERFIL ?? "suplementos",

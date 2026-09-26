@@ -11,7 +11,7 @@ console.log("🔧 Iniciando...");
 
 const dependencias = montarDependencias(config);
 const metricas = new Metricas();
-const bot = new BotService({ ...dependencias, prompt: config.prompt, metricas });
+const bot = new BotService({ ...dependencias, prompt: config.prompt, metricas, ritmo: config.ritmo });
 const app = criarServidor({ bot, metricas, config });
 
 const server = app.listen(config.porta, () => {
