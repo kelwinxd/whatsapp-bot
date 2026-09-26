@@ -6,6 +6,7 @@ import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
 import { BotService } from "./src/core/BotService.js";
 import { montarPromptDeSistema } from "./src/core/prompt.js";
 import { Metricas } from "./src/core/Metricas.js";
+import { Agenda } from "./src/core/Agenda.js";
 
 // Rode com: npm test
 // Nada aqui toca a rede: os adaptadores de WhatsApp e IA são substituídos por
@@ -501,10 +502,12 @@ test("envia uma mensagem por parte, em ordem", async () => {
 
 test("a instrução de quebra só aparece quando o máximo é maior que 1", () => {
   const varias = montarPromptDeSistema({ nome: "K", perfil: "whatsapp", limitePalavras: 60, maxMensagens: 3 });
-  assert.match(varias, /até 3 mensagens curtas/);
+  assert.match(varias, /3 é o teto, não a meta/);
+  // O padrão pedido é mensagem única; quebrar é a exceção.
+  assert.match(varias, /O normal é UMA mensagem só/);
 
   const unica = montarPromptDeSistema({ nome: "K", perfil: "whatsapp", limitePalavras: 60, maxMensagens: 1 });
-  assert.doesNotMatch(unica, /mensagens curtas/);
+  assert.doesNotMatch(unica, /é o teto/);
 });
 
 // --- Ritmo de digitação ----------------------------------------------------
@@ -550,4 +553,93 @@ test("pausa entre as mensagens, mas não antes da primeira", async () => {
 
   assert.equal(enviadas.length, 3);
   assert.deepEqual(pausas, [800, 800]);
+});
+
+// --- Agenda (tarefas no cron) ---------------------------------------------
+
+function montarBotDeTarefa({ resposta = "Bom dia! Bebe água 💧" } = {}) {
+  const enviadas = [];
+  const recebidosPelaIA = [];
+  const metricas = new Metricas();
+  const bot = new BotService({
+    whatsapp: { nome: "falso", enviarTexto: async (p) => enviadas.push(p.texto) },
+    ia: { nome: "falsa", responder: async (p) => { recebidosPelaIA.push(p.mensagens[0].content); return resposta; } },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    prompt: { perfil: "whatsapp", maxMensagens: 3 },
+    metricas,
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+  return { bot, enviadas, recebidosPelaIA, metricas };
+}
+
+const TAREFA = {
+  nome: "lembrete-agua",
+  cron: "0 10 * * *",
+  ativa: true,
+  telefone: "5519999999999",
+  instrucao: "Lembra de beber água.",
+};
+
+test("Agenda: agenda só as tarefas válidas e ativas", () => {
+  const erros = [];
+  const agenda = new Agenda({
+    tarefas: [
+      TAREFA,
+      { ...TAREFA, nome: "desativada", ativa: false },
+      { ...TAREFA, nome: "cron-ruim", cron: "todo dia às 10" },
+      { ...TAREFA, nome: "sem-telefone", telefone: undefined },
+    ],
+    bot: {},
+    logger: { log() {}, error: (m) => erros.push(m) },
+  });
+
+  assert.equal(agenda.iniciar(), 1);
+  assert.equal(erros.length, 2); // cron inválido e falta telefone
+  assert.deepEqual(
+    agenda.listar().map((t) => [t.nome, t.agendada]),
+    [["lembrete-agua", true], ["desativada", false], ["cron-ruim", false], ["sem-telefone", false]],
+  );
+
+  agenda.parar();
+  assert.equal(agenda.listar().every((t) => !t.agendada), true);
+});
+
+test("tarefa gera mensagem sem ninguém ter perguntado", async () => {
+  const { bot, enviadas, recebidosPelaIA, metricas } = montarBotDeTarefa();
+  const agenda = new Agenda({ tarefas: [TAREFA], bot, logger: { log() {}, error() {} } });
+
+  const r = await agenda.executar("lembrete-agua");
+
+  assert.equal(r.enviada, true);
+  assert.deepEqual(enviadas, ["Bom dia! Bebe água 💧"]);
+  assert.equal(recebidosPelaIA[0], "Lembra de beber água.");
+
+  // Só a resposta entra no histórico; a instrução é nossa, não da pessoa.
+  const historico = await bot.conversas.historico("5519999999999");
+  assert.deepEqual(historico, [{ role: "assistant", content: "Bom dia! Bebe água 💧" }]);
+
+  assert.equal(metricas.eventos[0].tipo, "agendada");
+  assert.equal(metricas.eventos[0].tarefa, "lembrete-agua");
+});
+
+test("tarefa com fonte manda os dados buscados como contexto", async () => {
+  const { bot, recebidosPelaIA } = montarBotDeTarefa();
+  const agenda = new Agenda({
+    tarefas: [{ ...TAREFA, nome: "dolar", fonte: "https://exemplo/cotacao" }],
+    bot,
+    logger: { log() {}, error() {} },
+  });
+  agenda.buscarFonte = async () => '{"USDBRL":{"bid":"5.40"}}';
+
+  await agenda.executar("dolar");
+
+  assert.match(recebidosPelaIA[0], /Lembra de beber água/);
+  assert.match(recebidosPelaIA[0], /recém-buscados/);
+  assert.match(recebidosPelaIA[0], /5\.40/);
+});
+
+test("tarefa desconhecida falha explicitamente", async () => {
+  const agenda = new Agenda({ tarefas: [TAREFA], bot: {}, logger: { log() {}, error() {} } });
+  await assert.rejects(() => agenda.executar("inexistente"), /Tarefa desconhecida/);
 });

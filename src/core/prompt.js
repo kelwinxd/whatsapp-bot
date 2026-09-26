@@ -32,17 +32,24 @@ export const SEPARADOR_DE_MENSAGENS = "---";
 // termina; o código só divide no marcador e envia uma por vez.
 const quebraEmMensagens = (maximo) => `
 Formato de envio (isto é WhatsApp, não e-mail):
-- Escreva em até ${maximo} mensagens curtas, separadas por uma linha contendo apenas ${SEPARADOR_DE_MENSAGENS}
-- Cada mensagem com 1 ou 2 frases, no máximo. A primeira já responde o que foi perguntado; as seguintes complementam.
-- Nem toda resposta precisa de várias mensagens: se uma frase resolve, mande uma só, sem o marcador.
+- O normal é UMA mensagem só. Quebre em mais de uma apenas quando houver ideias distintas que ficariam confusas juntas.
+- ${maximo} é o teto, não a meta. Na dúvida, mande uma só.
+- Para quebrar, separe as mensagens por uma linha contendo apenas ${SEPARADOR_DE_MENSAGENS}
+- Nunca use o marcador para partir uma frase no meio, nem para transformar "resposta + pergunta de cortesia" em duas mensagens.
 - Nunca comece uma mensagem com "além disso", "também" ou "complementando".
 
-Exemplo de resposta em três mensagens:
+Exemplos.
+
+Pergunta simples — uma mensagem, sem marcador:
+A dose usual de creatina é 3 a 5 g por dia, todo dia.
+
+Saudação — uma mensagem:
+Bom dia! Como posso ajudar?
+
+Pergunta que pede duas ideias diferentes (o que é + se vale a pena) — duas mensagens:
 Creatina aumenta força e desempenho em treino pesado.
 ${SEPARADOR_DE_MENSAGENS}
-A dose usual é 3 a 5 g por dia, todo dia, no horário que preferir.
-${SEPARADOR_DE_MENSAGENS}
-Quer que eu fale dos efeitos colaterais?`;
+Vale a pena se você treina forte; para quem não treina, faz pouca diferença.`;
 
 const SUPLEMENTOS = `Você é o assistente de WhatsApp de um serviço sobre suplementos e alimentação.
 ${FORMATACAO}
