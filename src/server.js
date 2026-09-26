@@ -2,26 +2,19 @@ import express from "express";
 import { fileURLToPath } from "node:url";
 import { perfisDisponiveis } from "./core/prompt.js";
 import { vocabulario } from "./core/horarios.js";
-import {
-  PERGUNTAS,
-  montarDocumento,
-  resumoParaPrompt,
-  contarRespostas,
-} from "./core/formularioLoja.js";
+import { PERGUNTAS, montarDocumento, contarRespostas } from "./core/formularioLoja.js";
 
 // Camada HTTP: só traduz requisição em chamada de serviço. Recebe o BotService
 // pronto, então dá para subir o servidor com um serviço falso em teste.
 
 const PASTA_PUBLICA = fileURLToPath(new URL("../public", import.meta.url));
 
-const NOME_DO_DOCUMENTO = "loja.md";
-
 export function criarServidor({
   bot,
   metricas,
   agenda,
   base,
-  salvarLoja = async () => {},
+  lojas = null,
   config = {},
   logger = console,
 }) {
@@ -71,7 +64,7 @@ export function criarServidor({
       prompt: bot.prompt.textoCustomizado ? "customizado" : bot.prompt.perfil,
       numeroTeste: config.numeroTeste ?? null,
       contatos: config.contatos ?? [],
-      loja: bot.loja?.respostas?.nome ?? null,
+      perfil: bot.prompt?.perfil ?? null,
       imagemDetalhe: bot.imagem?.detalhe ?? null,
       tarefas: agenda?.listar() ?? [],
       resumo: metricas.resumo(),
@@ -112,53 +105,58 @@ export function criarServidor({
     }
   });
 
-  // --- Formulário da loja ---
+  // --- Lojas (formulário guiado) ---
   // O esquema das perguntas vem do servidor: o painel monta a tela a partir
   // dele, então acrescentar pergunta é mexer num arquivo só.
   app.get("/api/loja/formulario", (_req, res) => res.json({ secoes: PERGUNTAS }));
 
-  app.get("/api/loja", async (_req, res) => {
-    const respostas = bot.loja?.respostas ?? {};
-    res.json({
-      respostas,
-      progresso: contarRespostas(respostas),
-      documento: montarDocumento(respostas),
-      indexadoEm: bot.loja?.indexadoEm ?? null,
-    });
+  app.get("/api/lojas", async (_req, res) => {
+    if (!lojas) return res.json({ lojas: [], perfilAtivo: null });
+    res.json({ lojas: await lojas.listar(), perfilAtivo: bot.prompt.perfil ?? null });
   });
 
-  // Prévia: mostra o documento que sairia, sem salvar nem indexar. Existe
-  // porque ver o resultado antes de gravar é o que dá confiança no formulário.
-  app.post("/api/loja/previa", (req, res) => {
+  app.get("/api/lojas/:slug", async (req, res) => {
+    const loja = await lojas.obter(req.params.slug);
+    if (!loja) return res.status(404).json({ erro: "loja não cadastrada" });
+    res.json({ ...loja, progresso: contarRespostas(loja.respostas) });
+  });
+
+  // Prévia: mostra o documento que sairia, sem salvar nem indexar. Ver o
+  // resultado antes de gravar é o que dá confiança no formulário.
+  app.post("/api/lojas/previa", (req, res) => {
     const respostas = req.body?.respostas ?? {};
     res.json({ documento: montarDocumento(respostas), progresso: contarRespostas(respostas) });
   });
 
-  // Salva as respostas, monta o documento e indexa. O resumo estruturado passa
-  // a valer na resposta seguinte, sem reiniciar o servidor.
-  app.put("/api/loja", async (req, res) => {
+  // Salva e indexa. Sem slug, ele sai do nome da loja — cadastrar "Sara
+  // Modas" cria o perfil loja_sara-modas.
+  // Duas rotas em vez de ":slug?": o Express 5 não aceita mais parâmetro
+  // opcional no caminho.
+  const salvarLoja = async (req, res) => {
     const respostas = req.body?.respostas;
     if (!respostas || typeof respostas !== "object") {
       return res.status(400).json({ erro: "envie as respostas" });
     }
 
-    const documento = montarDocumento(respostas);
-
     try {
-      let pedacos = null;
-      // Sem RAG ligado, as respostas são salvas e o resumo estruturado já
-      // funciona; só o documento não vai para a busca.
-      if (base && base.nome !== "nenhum") {
-        ({ pedacos } = await base.indexar({ nome: NOME_DO_DOCUMENTO, texto: documento }));
-      }
-
-      await salvarLoja({ respostas, indexadoEm: new Date().toISOString() });
-      bot.loja = { respostas, resumo: resumoParaPrompt(respostas), indexadoEm: new Date().toISOString() };
-
-      logger.log(`🏪 Loja salva${pedacos ? ` e indexada em ${pedacos} pedaço(s)` : " (RAG desligado)"}`);
-      res.json({ salva: true, documento, pedacos, progresso: contarRespostas(respostas) });
+      const salva = await lojas.salvar({ slug: req.params.slug, respostas });
+      res.json({ salva: true, ...salva, progresso: contarRespostas(respostas) });
     } catch (erro) {
       logger.error("❌ Erro ao salvar a loja:", erro);
+      res.status(502).json({ erro: erro.message });
+    }
+  };
+
+  app.put("/api/lojas", salvarLoja);
+  app.put("/api/lojas/:slug", salvarLoja);
+
+  app.delete("/api/lojas/:slug", async (req, res) => {
+    try {
+      const resultado = await lojas.remover(req.params.slug);
+      if (!resultado.removida) return res.status(404).json({ erro: "loja não cadastrada" });
+      logger.log(`🗑️  Loja "${req.params.slug}" removida`);
+      res.json(resultado);
+    } catch (erro) {
       res.status(502).json({ erro: erro.message });
     }
   });

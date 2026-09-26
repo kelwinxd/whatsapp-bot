@@ -98,15 +98,26 @@ perguntas frequentes). Ao salvar, as respostas viram duas coisas:
 - um **documento em markdown** indexado na base, para o texto corrido
   (política de troca, descrição de produto, FAQ).
 
-O perfil `PROMPT_PERFIL=loja` usa os dois: mantém a base de comportamento no
-WhatsApp (formatação, brevidade, resposta picada) e acrescenta as regras de
-atendimento — não inventar preço nem prazo, não prometer desconto fora da
-tabela, e encaminhar para uma pessoa em reclamação, problema de pedido ou
-dúvida de saúde.
+**Cada cadastro é uma loja.** O nome gera o slug, e o slug gera o perfil:
+"Sara Modas" vira `loja_sara-modas`. Para escolher qual loja o bot atende:
 
-Rotas: `GET /api/loja/formulario` (esquema das perguntas),
-`GET /api/loja`, `POST /api/loja/previa` e `PUT /api/loja` (salva e indexa).
-As respostas ficam em `dados/loja.json`, fora do versionamento.
+```
+PROMPT_PERFIL=loja_sara-modas
+```
+
+O perfil mantém a base de comportamento no WhatsApp (formatação, brevidade,
+resposta picada) e acrescenta as regras de atendimento — não inventar preço
+nem prazo, não prometer desconto fora da tabela, e encaminhar para uma pessoa
+em reclamação, problema de pedido ou dúvida de saúde.
+
+**A busca fica restrita ao documento daquela loja.** Sem isso, o bot de uma
+responderia com a política de troca de outra — o que aconteceu de verdade
+quando duas conviveram na base.
+
+Rotas: `GET /api/loja/formulario` (esquema das perguntas), `GET /api/lojas`,
+`GET /api/lojas/:slug`, `POST /api/lojas/previa`, `PUT /api/lojas[/:slug]` e
+`DELETE /api/lojas/:slug`. As respostas ficam em `dados/lojas/<slug>.json`,
+fora do versionamento.
 
 ## Base de conhecimento (RAG)
 

@@ -34,7 +34,14 @@
       .campo:last-child { margin-bottom: 0; }
       .campo label { display: block; font-size: 14px; margin-bottom: 5px; }
       .campo .exemplo { display: block; font-size: 12px; color: var(--apagado); margin-bottom: 6px; }
-      input, textarea, button {
+      select {
+        width: 100%; appearance: none; cursor: pointer;
+        padding: 12px 36px 12px 12px;
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238b93a1' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 12px center;
+      }
+      select option { background: #11141a; color: var(--texto); }
+      input, textarea, button, select {
         font: inherit; color: var(--texto); background: #11141a;
         border: 1px solid var(--borda); border-radius: 8px; padding: 11px 12px;
       }
@@ -68,6 +75,18 @@
         <a href="/painel/">← voltar ao painel</a>
       </p>
 
+      <div class="cartao" style="margin-bottom:18px">
+        <div class="campo" style="margin-bottom:10px">
+          <label for="seletor">Loja</label>
+          <select id="seletor"></select>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+          <button id="nova">+ Nova loja</button>
+          <button id="remover">Remover esta loja</button>
+        </div>
+        <p class="sub" id="perfilDaLoja" style="margin:10px 0 0"></p>
+      </div>
+
       <div id="formulario"><p class="sub">Carregando...</p></div>
 
       <div class="barra">
@@ -86,6 +105,7 @@
         String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
       let secoes = [];
+      let slugAtual = null; // null = loja nova, ainda não salva
 
       function campoHtml(campo, valor) {
         const comum = `id="campo-${campo.id}" data-campo="${campo.id}" placeholder="${escapar(campo.exemplo ?? "")}"`;
@@ -128,24 +148,92 @@
         $("aviso").style.color = cor;
       }
 
-      async function carregar() {
-        const [{ secoes: s }, estado] = await Promise.all([
-          fetch("/api/loja/formulario").then((r) => r.json()),
-          fetch("/api/loja").then((r) => r.json()),
-        ]);
-        secoes = s;
-        pintar(estado.respostas ?? {});
-        mostrarProgresso(estado.progresso);
-        if (estado.indexadoEm) {
-          avisar(`indexado em ${new Date(estado.indexadoEm).toLocaleString("pt-BR")}`, "var(--apagado)");
+      function mostrarPerfil(perfilAtivo) {
+        if (!slugAtual) {
+          $("perfilDaLoja").textContent = "Loja nova: o perfil sai do nome ao salvar.";
+          return;
         }
+        const perfil = `loja_${slugAtual}`;
+        const emUso = perfil === perfilAtivo;
+        const aviso = emUso
+          ? ' — <b style="color:var(--verde)">em uso agora</b>'
+          : ` — para usar, ponha <code>PROMPT_PERFIL=${escapar(perfil)}</code> no .env e reinicie`;
+        $("perfilDaLoja").innerHTML = `Perfil desta loja: <code>${escapar(perfil)}</code>${aviso}`;
       }
+
+      async function estadoDasLojas() {
+        return fetch("/api/lojas").then((r) => r.json());
+      }
+
+      async function listarLojas(selecionar) {
+        const { lojas, perfilAtivo } = await estadoDasLojas();
+        const opcoes = lojas
+          .map(
+            (l) =>
+              `<option value="${escapar(l.slug)}">${escapar(l.nome)} (${l.progresso.respondidos}/${l.progresso.total})</option>`,
+          )
+          .join("");
+        $("seletor").innerHTML = `${opcoes}<option value="">+ nova loja</option>`;
+
+        slugAtual =
+          selecionar ?? lojas.find((l) => l.perfil === perfilAtivo)?.slug ?? lojas[0]?.slug ?? null;
+        $("seletor").value = slugAtual ?? "";
+        return { lojas, perfilAtivo };
+      }
+
+      async function abrir(slug, perfilAtivo) {
+        slugAtual = slug || null;
+
+        if (!slugAtual) {
+          pintar({});
+          mostrarProgresso({ respondidos: 0, total: secoes.reduce((a, s) => a + s.campos.length, 0) });
+          avisar("", "");
+          mostrarPerfil(perfilAtivo);
+          return;
+        }
+
+        const loja = await fetch(`/api/lojas/${encodeURIComponent(slugAtual)}`).then((r) => r.json());
+        pintar(loja.respostas ?? {});
+        mostrarProgresso(loja.progresso);
+        avisar(
+          loja.indexadoEm ? `indexada em ${new Date(loja.indexadoEm).toLocaleString("pt-BR")}` : "",
+          "var(--apagado)",
+        );
+        mostrarPerfil(perfilAtivo);
+      }
+
+      $("seletor").addEventListener("change", async () => {
+        const { perfilAtivo } = await estadoDasLojas();
+        abrir($("seletor").value, perfilAtivo);
+      });
+
+      $("nova").addEventListener("click", () => {
+        $("seletor").value = "";
+        abrir("", null);
+      });
+
+      $("remover").addEventListener("click", async () => {
+        if (!slugAtual) return;
+        const nome = $("seletor").selectedOptions[0]?.textContent ?? slugAtual;
+        if (!confirm(`Remover "${nome}"? As respostas e o documento na base são apagados.`)) return;
+
+        const resposta = await fetch(`/api/lojas/${encodeURIComponent(slugAtual)}`, { method: "DELETE" });
+        if (!resposta.ok) {
+          avisar("❌ não foi possível remover", "var(--vermelho)");
+          return;
+        }
+        const { perfilAtivo } = await listarLojas();
+        abrir($("seletor").value, perfilAtivo);
+        avisar("🗑️ removida", "var(--apagado)");
+      });
 
       $("salvar").addEventListener("click", async () => {
         $("salvar").disabled = true;
         avisar("Salvando e indexando...", "var(--apagado)");
         try {
-          const resposta = await fetch("/api/loja", {
+          // Sem slug é loja nova: o servidor cria um a partir do nome.
+          const caminho = slugAtual ? `/api/lojas/${encodeURIComponent(slugAtual)}` : "/api/lojas";
+          const resposta = await fetch(caminho, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ respostas: lerRespostas() }),
@@ -156,11 +244,14 @@
           mostrarProgresso(dados.progresso);
           avisar(
             dados.pedacos
-              ? `✅ salvo e indexado em ${dados.pedacos} pedaço(s)`
-              : "✅ salvo (RAG desligado: ponha RAG_PROVIDER=memoria para indexar)",
+              ? `✅ salva e indexada em ${dados.pedacos} pedaço(s)`
+              : "✅ salva (RAG desligado: ponha RAG_PROVIDER=memoria para indexar)",
             dados.pedacos ? "var(--verde)" : "var(--amarelo)",
           );
           $("documento").innerHTML = `<h2>Documento gerado</h2><pre>${escapar(dados.documento)}</pre>`;
+
+          const { perfilAtivo } = await listarLojas(dados.slug);
+          mostrarPerfil(perfilAtivo);
         } catch (erro) {
           avisar("❌ " + erro.message, "var(--vermelho)");
         } finally {
@@ -169,7 +260,7 @@
       });
 
       $("verDocumento").addEventListener("click", async () => {
-        const resposta = await fetch("/api/loja/previa", {
+        const resposta = await fetch("/api/lojas/previa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ respostas: lerRespostas() }),
@@ -178,6 +269,12 @@
         mostrarProgresso(dados.progresso);
         $("documento").innerHTML = `<h2>Documento gerado</h2><pre>${escapar(dados.documento)}</pre>`;
       });
+
+      async function carregar() {
+        secoes = (await fetch("/api/loja/formulario").then((r) => r.json())).secoes;
+        const { perfilAtivo } = await listarLojas();
+        abrir($("seletor").value, perfilAtivo);
+      }
 
       carregar();
     </script>
