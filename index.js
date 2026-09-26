@@ -22,6 +22,12 @@ const agenda = new Agenda({
 const app = criarServidor({ bot, metricas, agenda, config });
 
 const server = app.listen(config.porta, () => {
+  // O Node chama este callback mesmo quando a porta está ocupada (com
+  // server.listening em false, e o evento "error" chegando depois). Sem esta
+  // guarda, o processo que vai falhar imprime o banner de sucesso e agenda as
+  // tarefas antes de morrer.
+  if (!server.listening) return;
+
   console.log(`✅ Express rodando em http://localhost:${config.porta}`);
   console.log(`📮 Webhook em POST /webhook`);
   console.log(`📱 WhatsApp: ${dependencias.whatsapp.nome} | 🧠 IA: ${dependencias.ia.nome}`);
@@ -32,6 +38,22 @@ const server = app.listen(config.porta, () => {
   if (quantas > 0) console.log(`⏰ ${quantas} tarefa(s) na agenda`);
 });
 
-server.on("error", (err) => console.error("❌ Erro no servidor:", err));
+server.on("error", (err) => {
+  // Porta ocupada é o erro mais comum aqui, e o stack trace do Node não diz o
+  // que fazer. Encerrar também importa: sem isso o processo continua vivo sem
+  // servidor, e a agenda dele dispararia as mesmas tarefas de novo — a pessoa
+  // receberia a mensagem duplicada.
+  if (err.code === "EADDRINUSE") {
+    console.error(`\n❌ A porta ${config.porta} já está em uso — outro bot está rodando.\n`);
+    console.error("   Para ver quem está usando e encerrar:");
+    console.error(`     netstat -ano | findstr :${config.porta}`);
+    console.error("     taskkill /F /PID <o último número da linha>\n");
+    console.error(`   Ou suba numa porta livre:  PORT=3001 npm run dev\n`);
+    process.exit(1);
+  }
+
+  console.error("❌ Erro no servidor:", err);
+  process.exit(1);
+});
 process.on("uncaughtException", (err) => console.error("❌ uncaughtException:", err));
 process.on("unhandledRejection", (err) => console.error("❌ unhandledRejection:", err));
