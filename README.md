@@ -137,13 +137,39 @@ bot precisa estar no ar na hora marcada.
 ```json
 {
   "nome": "cotacao-do-dolar",
-  "cron": "0 9 * * 1-5",
+  "cron": "DIAS_UTEIS_9AM",
   "ativa": true,
   "telefone": "5519999999999",
   "instrucao": "Diga a cotação atual do dólar em uma frase, com o valor de compra.",
   "fonte": "https://economia.awesomeapi.com.br/last/USD-BRL"
 }
 ```
+
+### Horários com nome
+
+O campo `cron` aceita três formas:
+
+| Forma | Exemplo | Quando dispara |
+| --- | --- | --- |
+| nome | `TODO_DIA_8AM` | 08:00, todos os dias |
+| nome | `DIAS_UTEIS_9_30AM` | 09:30, de segunda a sexta |
+| nome | `FIM_DE_SEMANA_10PM` | 22:00, sábado e domingo |
+| hora | `08:30` | 08:30, todos os dias |
+| cron cru | `0 10,14,17 * * 1-5` | 10h, 14h e 17h, de segunda a sexta |
+
+Os nomes são gerados em `src/core/horarios.js` (148 combinações: hora cheia e
+meia hora, em AM e PM, para todos os dias, dias úteis e fim de semana), mais
+os atalhos `CADA_MINUTO`, `CADA_5_MINUTOS`, `CADA_30_MINUTOS` e `CADA_HORA`,
+úteis para testar. Para listar:
+
+```bash
+npm run horarios          # todos
+npm run horarios uteis    # filtra pelo trecho do nome
+```
+
+Sobre a sintaxe cron, para quando os nomes não bastarem: são cinco campos —
+minuto, hora, dia do mês, mês e dia da semana (0=domingo). `*` é "todos",
+vírgula lista valores e hífen faz intervalo.
 
 O campo `fonte` é opcional: a URL é buscada na hora e o conteúdo vai como
 contexto para o modelo — é o que permite trazer informação de fora em vez de

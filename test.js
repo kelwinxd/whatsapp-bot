@@ -7,6 +7,7 @@ import { BotService } from "./src/core/BotService.js";
 import { montarPromptDeSistema } from "./src/core/prompt.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { Agenda } from "./src/core/Agenda.js";
+import { resolverHorario, descreverHorario } from "./src/core/horarios.js";
 
 // Rode com: npm test
 // Nada aqui toca a rede: os adaptadores de WhatsApp e IA são substituídos por
@@ -642,4 +643,46 @@ test("tarefa com fonte manda os dados buscados como contexto", async () => {
 test("tarefa desconhecida falha explicitamente", async () => {
   const agenda = new Agenda({ tarefas: [TAREFA], bot: {}, logger: { log() {}, error() {} } });
   await assert.rejects(() => agenda.executar("inexistente"), /Tarefa desconhecida/);
+});
+
+// --- Horários com nome ------------------------------------------------------
+
+test("resolverHorario aceita nome, hora e cron cru", () => {
+  assert.equal(resolverHorario("TODO_DIA_8AM"), "0 8 * * *");
+  assert.equal(resolverHorario("dias_uteis_9am"), "0 9 * * 1-5"); // sem ligar para maiúscula
+  assert.equal(resolverHorario("FIM_DE_SEMANA_10_30AM"), "30 10 * * 0,6");
+
+  // 12AM é meia-noite e 12PM é meio-dia.
+  assert.equal(resolverHorario("TODO_DIA_12AM"), "0 0 * * *");
+  assert.equal(resolverHorario("TODO_DIA_12PM"), "0 12 * * *");
+
+  // Hora avulsa vale para todos os dias.
+  assert.equal(resolverHorario("08:30"), "30 8 * * *");
+  assert.equal(resolverHorario("7:05"), "5 7 * * *");
+
+  // Cron cru passa direto.
+  assert.equal(resolverHorario("0 10,14,17 * * 1-5"), "0 10,14,17 * * 1-5");
+
+  // O que não é nenhum dos três é recusado, não chutado.
+  assert.equal(resolverHorario("amanhã cedo"), null);
+  assert.equal(resolverHorario("25:00"), null);
+  assert.equal(resolverHorario(undefined), null);
+});
+
+test("descreverHorario explica o cron em português", () => {
+  assert.equal(descreverHorario("0 9 * * 1-5"), "09:00, de segunda a sexta");
+  assert.equal(descreverHorario("30 10 * * 0,6"), "10:30, sábado e domingo");
+  assert.equal(descreverHorario("0 10,14,17 * * *"), "10:00, 14:00, 17:00, todos os dias");
+});
+
+test("Agenda entende horário por nome", () => {
+  const agenda = new Agenda({
+    tarefas: [{ ...TAREFA, cron: "DIAS_UTEIS_9AM" }, { ...TAREFA, nome: "ruim", cron: "às 9 da manhã" }],
+    bot: {},
+    logger: { log() {}, error() {} },
+  });
+
+  assert.equal(agenda.iniciar(), 1);
+  assert.equal(agenda.listar()[0].quando, "09:00, de segunda a sexta");
+  agenda.parar();
 });

@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { resolverHorario, descreverHorario } from "./horarios.js";
 
 // Mensagens que o bot manda por conta própria, na hora marcada — o inverso do
 // resto do projeto, que só reage a webhook. Cada tarefa é uma linha do
@@ -27,8 +28,11 @@ export class Agenda {
     for (const tarefa of this.tarefas) {
       if (!tarefa.ativa) continue;
 
-      if (!cron.validate(tarefa.cron)) {
-        this.logger.error(`❌ Tarefa "${tarefa.nome}": cron inválido (${tarefa.cron})`);
+      // O agenda.json pode trazer um nome ("TODO_DIA_8AM"), um horário
+      // ("08:30") ou cron cru — aqui tudo vira cron.
+      const expressao = resolverHorario(tarefa.cron);
+      if (!expressao || !cron.validate(expressao)) {
+        this.logger.error(`❌ Tarefa "${tarefa.nome}": horário inválido (${tarefa.cron})`);
         continue;
       }
       if (!tarefa.telefone || !tarefa.instrucao) {
@@ -37,7 +41,7 @@ export class Agenda {
       }
 
       const agendada = cron.schedule(
-        tarefa.cron,
+        expressao,
         () => {
           this.executar(tarefa.nome).catch((erro) =>
             this.logger.error(`❌ Tarefa "${tarefa.nome}" falhou:`, erro),
@@ -47,7 +51,9 @@ export class Agenda {
       );
 
       this.agendadas.set(tarefa.nome, agendada);
-      this.logger.log(`⏰ Tarefa "${tarefa.nome}" agendada (${tarefa.cron})`);
+      this.logger.log(
+        `⏰ Tarefa "${tarefa.nome}" agendada: ${descreverHorario(expressao)}`,
+      );
     }
 
     return this.agendadas.size;
@@ -62,6 +68,7 @@ export class Agenda {
     return this.tarefas.map((t) => ({
       nome: t.nome,
       cron: t.cron,
+      quando: descreverHorario(resolverHorario(t.cron) ?? t.cron),
       ativa: Boolean(t.ativa),
       telefone: t.telefone,
       instrucao: t.instrucao,

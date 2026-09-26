@@ -6,7 +6,8 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "test": "node --test",
-    "enviar": "node scripts/enviar.js"
+    "enviar": "node scripts/enviar.js",
+    "horarios": "node scripts/horarios.js"
   },
   "author": "kelwin",
   "license": "ISC",
