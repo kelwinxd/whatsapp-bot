@@ -127,6 +127,33 @@ marcador, os dois formatos são aceitos.
 Controle em `RESPOSTA_MAX_MENSAGENS` (1 volta ao comportamento de mensagem
 única). O excedente é juntado na última mensagem, nunca descartado.
 
+## Agenda (mensagens na hora marcada)
+
+O bot também pode iniciar conversa: `agenda.json` (copie de
+`agenda.example.json`) lista tarefas com expressão cron, telefone e a
+instrução que vai ao modelo. Ele roda no mesmo processo do servidor, então o
+bot precisa estar no ar na hora marcada.
+
+```json
+{
+  "nome": "cotacao-do-dolar",
+  "cron": "0 9 * * 1-5",
+  "ativa": true,
+  "telefone": "5519999999999",
+  "instrucao": "Diga a cotação atual do dólar em uma frase, com o valor de compra.",
+  "fonte": "https://economia.awesomeapi.com.br/last/USD-BRL"
+}
+```
+
+O campo `fonte` é opcional: a URL é buscada na hora e o conteúdo vai como
+contexto para o modelo — é o que permite trazer informação de fora em vez de
+só gerar texto. Falha na fonte não cancela a tarefa; o modelo é avisado de que
+o dado não veio.
+
+Cron inválido ou tarefa sem telefone são recusados na subida, com erro no log.
+No painel dá para ver as tarefas e disparar qualquer uma na hora, sem esperar
+o horário. O `agenda.json` fica fora do versionamento porque tem telefone.
+
 ## Ritmo de digitação
 
 O "digitando..." dura conforme o tamanho da mensagem: 45ms por caractere, com
