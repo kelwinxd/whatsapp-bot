@@ -1,0 +1,27 @@
+{
+  "fusoHorario": "America/Sao_Paulo",
+  "tarefas": [
+    {
+      "nome": "dica-da-manha",
+      "cron": "0 8 * * *",
+      "ativa": false,
+      "telefone": "5519999999999",
+      "instrucao": "Manda uma dica curta e prática do dia sobre suplementação ou alimentação. Uma mensagem só."
+    },
+    {
+      "nome": "lembrete-agua",
+      "cron": "0 10,14,17 * * 1-5",
+      "ativa": false,
+      "telefone": "5519999999999",
+      "instrucao": "Lembra a pessoa de beber água, de forma curta e sem soar robótico. Varie o jeito de dizer."
+    },
+    {
+      "nome": "cotacao-do-dolar",
+      "cron": "0 9 * * 1-5",
+      "ativa": false,
+      "telefone": "5519999999999",
+      "instrucao": "Diga a cotação atual do dólar em uma frase, com o valor de compra.",
+      "fonte": "https://economia.awesomeapi.com.br/last/USD-BRL"
+    }
+  ]
+}

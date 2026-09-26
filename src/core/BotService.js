@@ -185,6 +185,76 @@ export class BotService {
     };
   }
 
+  // Envia a resposta em partes. Sequencial de propósito: a Evolution só envia
+  // depois do "digitando...", então esperar cada uma é o que cria o ritmo de
+  // conversa. Em paralelo, as mensagens chegariam juntas e fora de ordem.
+  async enviarPartes(telefone, resposta) {
+    const partes = this.dividirResposta(resposta, this.prompt.maxMensagens ?? 1);
+
+    for (const [indice, parte] of partes.entries()) {
+      // Antes da primeira não cabe pausa: a espera da IA já fez esse papel.
+      if (indice > 0) await this.dormir(this.ritmo.pausaMs);
+      await this.whatsapp.enviarTexto({
+        telefone,
+        texto: parte,
+        digitandoMs: this.digitandoMs(parte),
+      });
+    }
+
+    return partes;
+  }
+
+  // Mensagem que o bot inicia, vinda da agenda. Não existe pergunta de
+  // ninguém: a instrução da tarefa faz esse papel, e a fonte externa (quando a
+  // tarefa tem uma) entra como contexto.
+  async executarTarefa({ nome, telefone, instrucao, contexto }) {
+    const inicio = Date.now();
+
+    const pedido = contexto
+      ? `${instrucao}\n\nUse estes dados, recém-buscados, como base:\n${contexto}`
+      : instrucao;
+
+    try {
+      const antesDaIA = Date.now();
+      const resposta = await this.ia.responder({
+        sistema: montarPromptDeSistema({ nome: "amigo", ...this.prompt }),
+        mensagens: [{ role: "user", content: pedido }],
+      });
+      const iaMs = Date.now() - antesDaIA;
+
+      const partes = await this.enviarPartes(telefone, resposta);
+
+      // Só a resposta entra no histórico: a instrução é nossa, não da pessoa,
+      // e veria como se ela tivesse pedido isso.
+      await this.conversas.acrescentar(telefone, { role: "assistant", content: resposta });
+
+      this.metricas.registrar({
+        tipo: "agendada",
+        tarefa: nome,
+        telefone,
+        pergunta: instrucao,
+        resposta,
+        temFonte: Boolean(contexto),
+        partes: partes.length,
+        iaMs,
+        totalMs: Date.now() - inicio,
+      });
+
+      this.logger.log(`⏰ Tarefa "${nome}" enviada para ${telefone} (${partes.length}x)`);
+      return { enviada: true, resposta, partes };
+    } catch (erro) {
+      this.logger.error(`❌ Tarefa "${nome}" falhou:`, erro);
+      this.metricas.registrar({
+        tipo: "erro",
+        tarefa: nome,
+        telefone,
+        erro: erro.message,
+        totalMs: Date.now() - inicio,
+      });
+      throw erro;
+    }
+  }
+
   async responder(mensagem) {
     const { telefone, nome, texto, midia } = mensagem;
 
@@ -230,19 +300,7 @@ export class BotService {
       await this.conversas.acrescentar(telefone, { role: "assistant", content: resposta });
 
       const antesDoEnvio = Date.now();
-      const partes = this.dividirResposta(resposta, this.prompt.maxMensagens ?? 1);
-      // Sequencial de propósito: a Evolution só envia depois do "digitando...",
-      // então esperar cada uma é o que cria o ritmo de conversa. Em paralelo,
-      // as mensagens chegariam juntas e fora de ordem.
-      for (const [indice, parte] of partes.entries()) {
-        // Antes da primeira não cabe pausa: a espera da IA já fez esse papel.
-        if (indice > 0) await this.dormir(this.ritmo.pausaMs);
-        await this.whatsapp.enviarTexto({
-          telefone,
-          texto: parte,
-          digitandoMs: this.digitandoMs(parte),
-        });
-      }
+      const partes = await this.enviarPartes(telefone, resposta);
 
       this.metricas.registrar({
         tipo: "respondida",

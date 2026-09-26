@@ -1,8 +1,22 @@
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 
 // Ponto único de leitura de variáveis de ambiente. Nenhum outro arquivo lê
 // process.env: assim dá para ver de relance tudo que o projeto precisa, e
 // trocar a origem da configuração (arquivo, cofre de segredos) num lugar só.
+
+// Tarefas agendadas ficam num JSON à parte, para mudar horário ou texto sem
+// tocar no código. O arquivo é opcional: sem ele, o bot só reage a webhook.
+function carregarAgenda(caminho = process.env.AGENDA_ARQUIVO ?? "agenda.json") {
+  try {
+    return JSON.parse(readFileSync(caminho, "utf8"));
+  } catch (erro) {
+    if (erro.code !== "ENOENT") {
+      console.error(`⚠️  Não foi possível ler ${caminho}: ${erro.message}`);
+    }
+    return { tarefas: [] };
+  }
+}
 
 export const config = {
   porta: Number(process.env.PORT ?? 3000),
@@ -53,6 +67,8 @@ export const config = {
     maximoMs: Number(process.env.DIGITANDO_MAX_MS ?? 5000),
     pausaMs: Number(process.env.PAUSA_ENTRE_MENSAGENS_MS ?? 800),
   },
+
+  agenda: carregarAgenda(),
 
   prompt: {
     // suplementos | whatsapp | puro (ver src/core/prompt.js)

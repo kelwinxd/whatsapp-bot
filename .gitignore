@@ -1,3 +1,4 @@
 node_modules/
 .env
 evolution/qrcode.png
+agenda.json
