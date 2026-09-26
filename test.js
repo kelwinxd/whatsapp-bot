@@ -6,7 +6,8 @@ import { ZapiAdapter } from "./src/adapters/whatsapp/ZapiAdapter.js";
 import { EvolutionAdapter } from "./src/adapters/whatsapp/EvolutionAdapter.js";
 import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
 import { BotService } from "./src/core/BotService.js";
-import { montarPromptDeSistema } from "./src/core/prompt.js";
+import { montarPromptDeSistema, perfisDisponiveis } from "./src/core/prompt.js";
+import { montarDocumento, resumoParaPrompt, contarRespostas } from "./src/core/formularioLoja.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -1138,4 +1139,87 @@ test("o BotService consulta a base e sobrevive a falha dela", async () => {
   const r = await comBaseQuebrada.processarWebhook(webhook("oi"));
   assert.equal(r.tratada, true);
   assert.equal(comBaseQuebrada.metricas.eventos[0].trechos, 0);
+});
+
+// --- Formulário da loja ----------------------------------------------------
+
+const RESPOSTAS_DA_LOJA = {
+  nome: "Empório da Serra",
+  ramo: "Produtos naturais",
+  horarioSemana: "9h às 18h30",
+  horarioDomingo: "Fechado",
+  taxaEntrega: "R$ 8 em Serra Negra",
+  condicoesTroca: "Só produto lacrado. Não trocamos alimento aberto.",
+  perguntasFrequentes:
+    "Tem sem lactose? | Sim, linha completa.\nAceitam encomenda? | Sim, com 50% de entrada.\nlinha sem separador",
+};
+
+test("resumoParaPrompt traz só os campos exatos, sem os vazios", () => {
+  const resumo = resumoParaPrompt(RESPOSTAS_DA_LOJA);
+
+  assert.match(resumo, /- Nome: Empório da Serra/);
+  assert.match(resumo, /- Horário seg-sex: 9h às 18h30/);
+  assert.match(resumo, /- Taxa de entrega: R\$ 8 em Serra Negra/);
+  // Campo não respondido não aparece como linha vazia.
+  assert.doesNotMatch(resumo, /Parcelamento/);
+  // Texto corrido fica para o RAG, não para o resumo.
+  assert.doesNotMatch(resumo, /lacrado/);
+
+  assert.equal(resumoParaPrompt({}), null);
+});
+
+test("montarDocumento organiza por seção e separa cada FAQ", () => {
+  const documento = montarDocumento(RESPOSTAS_DA_LOJA);
+
+  assert.match(documento, /^# Empório da Serra/);
+  assert.match(documento, /## Horários\n/);
+  assert.match(documento, /Segunda a sexta: 9h às 18h30/);
+  assert.match(documento, /Não trocamos alimento aberto/);
+
+  // Cada pergunta frequente é um parágrafo próprio, que é a unidade da busca.
+  assert.match(documento, /## Tem sem lactose\?\nSim, linha completa\./);
+  assert.match(documento, /## Aceitam encomenda\?\nSim, com 50% de entrada\./);
+  // Linha sem o separador "|" é ignorada em vez de virar lixo no documento.
+  assert.doesNotMatch(documento, /linha sem separador/);
+
+  // Seção sem nenhuma resposta não entra.
+  assert.doesNotMatch(documento, /## Pagamento/);
+
+  // Parágrafos separados por linha em branco: é como o chunker corta.
+  assert.ok(documento.includes("\n\n"));
+});
+
+test("contarRespostas mede o progresso do formulário", () => {
+  const { total, respondidos } = contarRespostas(RESPOSTAS_DA_LOJA);
+  assert.equal(respondidos, Object.keys(RESPOSTAS_DA_LOJA).length);
+  assert.ok(total > respondidos);
+  assert.equal(contarRespostas({}).respondidos, 0);
+});
+
+test("perfil loja mantém o comportamento de WhatsApp e recebe os dados da loja", () => {
+  const prompt = montarPromptDeSistema({
+    nome: "Kelwin",
+    perfil: "loja",
+    limitePalavras: 60,
+    maxMensagens: 3,
+    loja: resumoParaPrompt(RESPOSTAS_DA_LOJA),
+    trechos: [{ conteudo: "Whey a partir de R$ 119.", documento: "loja.md", posicao: 0, distancia: 0.2 }],
+  });
+
+  // Base de comportamento no WhatsApp: formatação, tamanho e quebra.
+  assert.match(prompt, /Negrito com \*um asterisco\*/);
+  assert.match(prompt, /No máximo 60 palavras/);
+  assert.match(prompt, /O normal é UMA mensagem só/);
+
+  // Regras de loja.
+  assert.match(prompt, /Nunca invente preço, prazo, horário ou política/);
+  assert.match(prompt, /ofereça chamar alguém da equipe/);
+
+  // Dados exatos e trechos do RAG, cada um no seu bloco.
+  assert.match(prompt, /Dados da loja \(use estes valores, são os oficiais\)/);
+  assert.match(prompt, /- Nome: Empório da Serra/);
+  assert.match(prompt, /\[1\] \(loja\.md, parte 1\) Whey/);
+
+  // O perfil está no catálogo exposto pelo /health.
+  assert.ok(perfisDisponiveis.includes("loja"));
 });

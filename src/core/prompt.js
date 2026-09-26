@@ -61,12 +61,28 @@ Regras por ser tema de saúde:
 - Se não souber, diga que não sabe. Não invente números nem estudos.
 - Assunto fora de suplementos e alimentação: diga em uma frase que seu foco é esse e ofereça ajuda.`;
 
+const LOJA = `Você é o atendimento por WhatsApp de uma loja. Fala com clientes que perguntam
+sobre produtos, preço, horário, entrega e trocas.
+${FORMATACAO}
+
+Regras do atendimento:
+- Responda com os dados da loja e o material fornecido. Nunca invente preço, prazo, horário ou política.
+- Não sabe ou não está no material? Diga isso em uma frase e ofereça chamar alguém da equipe.
+- Nunca prometa desconto, exceção ou condição especial que não esteja escrita.
+- Pedido com problema, reclamação ou pedido de desconto: não tente resolver, encaminhe para uma pessoa.
+- Não peça nem repita dado sensível (cartão, documento, senha). Se o cliente mandar, ignore e avise que o pagamento é feito pelos canais oficiais da loja.
+- Assunto fora da loja: diga em uma frase que seu foco é o atendimento dela.`;
+
 const PERFIS = {
   // Assistente de suplementos e alimentação, com as regras de tema de saúde.
   suplementos: SUPLEMENTOS,
 
   // Só as regras de formatação: o modelo responde sobre qualquer assunto.
   whatsapp: FORMATACAO,
+
+  // Atendimento de loja: mesma base de comportamento no WhatsApp, com as
+  // regras de não inventar dado e de encaminhar para humano.
+  loja: LOJA,
 
   // Modelo puro: nenhuma instrução nossa, nenhum assunto imposto. Serve para
   // ver o comportamento cru da OpenAI, sem nada no meio.
@@ -87,6 +103,12 @@ Regras sobre esses trechos:
 - Se não está, diga que não encontrou no material e ofereça ajudar com o que você sabe — sem inventar que estava no documento.
 - Não misture o conteúdo dos trechos com conhecimento próprio sem deixar claro o que é o quê.`;
 
+// Dados exatos da loja. Vão no prompt, e não no RAG, porque horário, taxa e
+// prazo precisam sair sem erro de um dígito — busca vetorial não garante isso.
+const blocoDaLoja = (resumo) => `
+Dados da loja (use estes valores, são os oficiais):
+${resumo}`;
+
 export function montarPromptDeSistema({
   nome,
   perfil,
@@ -94,6 +116,7 @@ export function montarPromptDeSistema({
   limitePalavras,
   maxMensagens,
   trechos = [],
+  loja = null,
 }) {
   if (textoCustomizado) return textoCustomizado;
 
@@ -109,7 +132,10 @@ export function montarPromptDeSistema({
   const limite = limitePalavras ? brevidade(limitePalavras) : "";
   const quebra = maxMensagens > 1 ? quebraEmMensagens(maxMensagens) : "";
   const contexto = trechos.length > 0 ? blocoDeTrechos(trechos) : "";
-  return `${base}\n${limite}\n${quebra}\n${contexto}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
+  // Os dados exatos vêm antes dos trechos de propósito: em caso de conflito, o
+  // que está no cadastro da loja é o que vale.
+  const dadosDaLoja = loja ? blocoDaLoja(loja) : "";
+  return `${base}\n${limite}\n${quebra}\n${dadosDaLoja}\n${contexto}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
 }
 
 export const perfisDisponiveis = Object.keys(PERFIS);
