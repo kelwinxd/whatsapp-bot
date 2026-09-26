@@ -137,7 +137,7 @@ bot precisa estar no ar na hora marcada.
 ```json
 {
   "nome": "cotacao-do-dolar",
-  "cron": "DIAS_UTEIS_9AM",
+  "cron": "9_AM+MONDAY_TO_FRIDAY",
   "ativa": true,
   "telefone": "5519999999999",
   "instrucao": "Diga a cotação atual do dólar em uma frase, com o valor de compra.",
@@ -145,29 +145,35 @@ bot precisa estar no ar na hora marcada.
 }
 ```
 
-### Horários com nome
+### Horários
 
-O campo `cron` aceita três formas:
+O campo `cron` é uma composição de **hora + dias**, no estilo das constantes de
+cron do Nest:
 
-| Forma | Exemplo | Quando dispara |
-| --- | --- | --- |
-| nome | `TODO_DIA_8AM` | 08:00, todos os dias |
-| nome | `DIAS_UTEIS_9_30AM` | 09:30, de segunda a sexta |
-| nome | `FIM_DE_SEMANA_10PM` | 22:00, sábado e domingo |
-| hora | `08:30` | 08:30, todos os dias |
-| cron cru | `0 10,14,17 * * 1-5` | 10h, 14h e 17h, de segunda a sexta |
-
-Os nomes são gerados em `src/core/horarios.js` (148 combinações: hora cheia e
-meia hora, em AM e PM, para todos os dias, dias úteis e fim de semana), mais
-os atalhos `CADA_MINUTO`, `CADA_5_MINUTOS`, `CADA_30_MINUTOS` e `CADA_HORA`,
-úteis para testar. Para listar:
-
-```bash
-npm run horarios          # todos
-npm run horarios uteis    # filtra pelo trecho do nome
+```
+"9_AM+EVERY_DAY"          ->  0 9 * * *       09:00, todos os dias
+"10_PM+MONDAY_TO_FRIDAY"  ->  0 22 * * 1-5    22:00, de segunda a sexta
+"00_AM+WEEKEND"           ->  0 0 * * 0,6     00:00, sábado e domingo
+"7_AM"                    ->  0 7 * * *       sem dias = todos os dias
+"08:30+MONDAY_TO_FRIDAY"  ->  30 8 * * 1-5    quando precisa de minuto
+"0 10,14,17 * * 1-5"      ->  cron cru, para o que a composição não cobre
 ```
 
-Sobre a sintaxe cron, para quando os nomes não bastarem: são cinco campos —
+**Horas:** `12_AM` (ou `00_AM`) a `11_PM`.
+**Dias:** `EVERY_DAY`, `MONDAY_TO_FRIDAY`, `WEEKEND` e cada dia
+(`MONDAY`… `SUNDAY`).
+**Frequências:** `EVERY_MINUTE`, `EVERY_5_MINUTES`, `EVERY_30_MINUTES`,
+`EVERY_HOUR` — úteis para testar.
+
+```bash
+npm run horarios                  # lista tudo
+npm run horarios 9_AM+WEEKEND     # confere uma combinação
+```
+
+Combinação inválida é recusada na subida, com erro no log. O log e o painel
+mostram o horário em português ("09:00, de segunda a sexta").
+
+Sobre a sintaxe cron, para quando a composição não bastar: são cinco campos —
 minuto, hora, dia do mês, mês e dia da semana (0=domingo). `*` é "todos",
 vírgula lista valores e hífen faz intervalo.
 

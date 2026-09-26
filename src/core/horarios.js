@@ -1,77 +1,99 @@
-// Horários com nome, para não ter que escrever cron na mão.
+// Horário por composição: HORA + DIAS, no estilo das constantes de cron do
+// Nest. No agenda.json o campo "cron" recebe a combinação como texto:
 //
-// A sintaxe cron são cinco campos: minuto, hora, dia do mês, mês, dia da
-// semana. "0 9 * * 1-5" = 9:00, de segunda a sexta. É compacto, mas fácil de
-// errar — e um erro aqui só apareceria na hora em que a mensagem não chegou.
+//   "9_AM+EVERY_DAY"          -> 0 9 * * *
+//   "10_PM+MONDAY_TO_FRIDAY"  -> 0 22 * * 1-5
+//   "00_AM+WEEKEND"           -> 0 0 * * 0,6
+//   "9_AM"                    -> 0 9 * * *     (sem dias = todos os dias)
+//   "08:30+MONDAY_TO_FRIDAY"  -> 30 8 * * 1-5  (quando precisa de minuto)
+//   "0 10,14,17 * * 1-5"      -> cron cru, para o que a composição não cobre
 //
-// No agenda.json o campo "cron" aceita três formas:
-//   "TODO_DIA_8AM"     um nome deste arquivo
-//   "08:30"            hora e minuto, todos os dias
-//   "0 8 * * 1-5"      cron cru, para casos que os nomes não cobrem
+// Duas tabelas pequenas em vez de uma lista enorme de nomes prontos: é o
+// mesmo conjunto de possibilidades, sem precisar decorar combinação.
 
-const DIAS = {
-  TODO_DIA: "*",
-  DIAS_UTEIS: "1-5", // segunda a sexta
-  FIM_DE_SEMANA: "0,6", // domingo e sábado
+export const HORAS = {
+  "12_AM": 0,
+  "00_AM": 0, // mesmo que 12_AM, para quem pensa em 24h
+  "1_AM": 1,
+  "2_AM": 2,
+  "3_AM": 3,
+  "4_AM": 4,
+  "5_AM": 5,
+  "6_AM": 6,
+  "7_AM": 7,
+  "8_AM": 8,
+  "9_AM": 9,
+  "10_AM": 10,
+  "11_AM": 11,
+  "12_PM": 12,
+  "1_PM": 13,
+  "2_PM": 14,
+  "3_PM": 15,
+  "4_PM": 16,
+  "5_PM": 17,
+  "6_PM": 18,
+  "7_PM": 19,
+  "8_PM": 20,
+  "9_PM": 21,
+  "10_PM": 22,
+  "11_PM": 23,
 };
 
-// 12AM é meia-noite (hora 0) e 12PM é meio-dia (hora 12) — a convenção que
-// confunde todo mundo, resolvida aqui de uma vez.
-const hora24 = (hora12, periodo) => {
-  const base = hora12 % 12;
-  return periodo === "AM" ? base : base + 12;
+export const DIAS = {
+  EVERY_DAY: "*",
+  MONDAY_TO_FRIDAY: "1-5",
+  WEEKEND: "0,6",
+  SUNDAY: "0",
+  MONDAY: "1",
+  TUESDAY: "2",
+  WEDNESDAY: "3",
+  THURSDAY: "4",
+  FRIDAY: "5",
+  SATURDAY: "6",
 };
 
-function gerarHorarios() {
-  const tabela = {};
+// Frequências, para testar uma tarefa nova sem esperar o horário.
+export const FREQUENCIAS = {
+  EVERY_MINUTE: "* * * * *",
+  EVERY_5_MINUTES: "*/5 * * * *",
+  EVERY_30_MINUTES: "*/30 * * * *",
+  EVERY_HOUR: "0 * * * *",
+};
 
-  for (const [nomeDias, dias] of Object.entries(DIAS)) {
-    for (const periodo of ["AM", "PM"]) {
-      for (let hora12 = 1; hora12 <= 12; hora12++) {
-        const hora = hora24(hora12, periodo);
-        // TODO_DIA_8AM, DIAS_UTEIS_9AM, FIM_DE_SEMANA_10PM...
-        tabela[`${nomeDias}_${hora12}${periodo}`] = `0 ${hora} * * ${dias}`;
-        // E a variante na meia hora: TODO_DIA_8_30AM
-        tabela[`${nomeDias}_${hora12}_30${periodo}`] = `30 ${hora} * * ${dias}`;
-      }
-    }
-  }
+const REGEX_HORA_MINUTO = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 
-  return {
-    ...tabela,
-    // Atalhos de frequência, úteis para testar uma tarefa nova.
-    CADA_MINUTO: "* * * * *",
-    CADA_5_MINUTOS: "*/5 * * * *",
-    CADA_30_MINUTOS: "*/30 * * * *",
-    CADA_HORA: "0 * * * *",
-  };
-}
-
-export const HORARIOS = gerarHorarios();
-
-const REGEX_HORA = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+/** Monta a expressão cron a partir de hora, minuto e dias. */
+export const montarCron = (hora, minuto, dias) => `${minuto} ${hora} * * ${dias}`;
 
 /**
  * Traduz o que veio no agenda.json para uma expressão cron.
- * Devolve null quando não reconhece — quem chama decide o que fazer.
+ * Devolve null quando não reconhece — chutar aqui viraria mensagem no
+ * horário errado, ou mensagem nenhuma.
  */
 export function resolverHorario(valor) {
   if (typeof valor !== "string") return null;
   const limpo = valor.trim();
 
-  if (HORARIOS[limpo.toUpperCase()]) return HORARIOS[limpo.toUpperCase()];
+  if (FREQUENCIAS[limpo.toUpperCase()]) return FREQUENCIAS[limpo.toUpperCase()];
 
-  const hora = REGEX_HORA.exec(limpo);
-  if (hora) return `${Number(hora[2])} ${Number(hora[1])} * * *`;
-
-  // Cinco campos: assume-se cron cru, e a validação fica com o node-cron.
+  // Cinco campos separados por espaço: cron cru, validado depois pelo node-cron.
   if (limpo.split(/\s+/).length === 5) return limpo;
+
+  const [parteHora, parteDias = "EVERY_DAY"] = limpo.split("+").map((p) => p.trim());
+  const dias = DIAS[parteDias.toUpperCase()];
+  if (!dias) return null;
+
+  const horaNomeada = HORAS[parteHora.toUpperCase()];
+  if (horaNomeada !== undefined) return montarCron(horaNomeada, 0, dias);
+
+  const horaMinuto = REGEX_HORA_MINUTO.exec(parteHora);
+  if (horaMinuto) return montarCron(Number(horaMinuto[1]), Number(horaMinuto[2]), dias);
 
   return null;
 }
 
-// Em português, para o log e o painel: "TODO_DIA_8AM" não diz muito a quem
-// não abriu este arquivo.
+// Em português, para o log e o painel: "0 9 * * 1-5" não diz nada a quem não
+// conhece a sintaxe.
 export function descreverHorario(cronExpressao) {
   const partes = String(cronExpressao).split(/\s+/);
   if (partes.length !== 5) return cronExpressao;
@@ -79,14 +101,19 @@ export function descreverHorario(cronExpressao) {
   const [minuto, hora, , , diaSemana] = partes;
   if (hora === "*" || minuto.includes("*")) return cronExpressao;
 
-  const quando =
-    diaSemana === "1-5"
-      ? "de segunda a sexta"
-      : diaSemana === "0,6"
-        ? "sábado e domingo"
-        : diaSemana === "*"
-          ? "todos os dias"
-          : `nos dias ${diaSemana} da semana`;
+  const nomesDeDias = {
+    "*": "todos os dias",
+    "1-5": "de segunda a sexta",
+    "0,6": "sábado e domingo",
+    0: "domingo",
+    1: "segunda",
+    2: "terça",
+    3: "quarta",
+    4: "quinta",
+    5: "sexta",
+    6: "sábado",
+  };
+  const quando = nomesDeDias[diaSemana] ?? `nos dias ${diaSemana} da semana`;
 
   const horas = hora
     .split(",")

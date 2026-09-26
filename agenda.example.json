@@ -3,21 +3,21 @@
   "tarefas": [
     {
       "nome": "dica-da-manha",
-      "cron": "TODO_DIA_8AM",
+      "cron": "8_AM+EVERY_DAY",
       "ativa": false,
       "telefone": "5519999999999",
       "instrucao": "Manda uma dica curta e prática do dia sobre suplementação ou alimentação. Uma mensagem só."
     },
     {
       "nome": "lembrete-agua",
-      "cron": "DIAS_UTEIS_2PM",
+      "cron": "2_PM+MONDAY_TO_FRIDAY",
       "ativa": false,
       "telefone": "5519999999999",
       "instrucao": "Lembra a pessoa de beber água, de forma curta e sem soar robótico. Varie o jeito de dizer."
     },
     {
       "nome": "cotacao-do-dolar",
-      "cron": "DIAS_UTEIS_9AM",
+      "cron": "9_AM+MONDAY_TO_FRIDAY",
       "ativa": false,
       "telefone": "5519999999999",
       "instrucao": "Diga a cotação atual do dólar em uma frase, com o valor de compra.",
@@ -25,7 +25,7 @@
     },
     {
       "nome": "teste-rapido",
-      "cron": "CADA_5_MINUTOS",
+      "cron": "EVERY_5_MINUTES",
       "ativa": false,
       "telefone": "5519999999999",
       "instrucao": "Diga apenas: teste da agenda funcionando."

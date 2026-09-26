@@ -647,23 +647,34 @@ test("tarefa desconhecida falha explicitamente", async () => {
 
 // --- Horários com nome ------------------------------------------------------
 
-test("resolverHorario aceita nome, hora e cron cru", () => {
-  assert.equal(resolverHorario("TODO_DIA_8AM"), "0 8 * * *");
-  assert.equal(resolverHorario("dias_uteis_9am"), "0 9 * * 1-5"); // sem ligar para maiúscula
-  assert.equal(resolverHorario("FIM_DE_SEMANA_10_30AM"), "30 10 * * 0,6");
+test("resolverHorario compõe hora + dias", () => {
+  assert.equal(resolverHorario("9_AM+EVERY_DAY"), "0 9 * * *");
+  assert.equal(resolverHorario("10_PM+MONDAY_TO_FRIDAY"), "0 22 * * 1-5");
+  assert.equal(resolverHorario("00_AM+WEEKEND"), "0 0 * * 0,6");
+  assert.equal(resolverHorario("6_PM+SATURDAY"), "0 18 * * 6");
 
-  // 12AM é meia-noite e 12PM é meio-dia.
-  assert.equal(resolverHorario("TODO_DIA_12AM"), "0 0 * * *");
-  assert.equal(resolverHorario("TODO_DIA_12PM"), "0 12 * * *");
+  // Sem dias, vale para todos.
+  assert.equal(resolverHorario("7_AM"), "0 7 * * *");
 
-  // Hora avulsa vale para todos os dias.
-  assert.equal(resolverHorario("08:30"), "30 8 * * *");
+  // Maiúscula, minúscula e espaços em volta do + não importam.
+  assert.equal(resolverHorario(" 9_am + monday_to_friday "), "0 9 * * 1-5");
+
+  // 12_AM é meia-noite, 12_PM é meio-dia, e 00_AM é o mesmo que 12_AM.
+  assert.equal(resolverHorario("12_AM+EVERY_DAY"), "0 0 * * *");
+  assert.equal(resolverHorario("12_PM+EVERY_DAY"), "0 12 * * *");
+  assert.equal(resolverHorario("00_AM"), resolverHorario("12_AM"));
+
+  // Minuto quando a hora cheia não serve.
+  assert.equal(resolverHorario("08:30+MONDAY_TO_FRIDAY"), "30 8 * * 1-5");
   assert.equal(resolverHorario("7:05"), "5 7 * * *");
 
-  // Cron cru passa direto.
+  // Frequências e cron cru.
+  assert.equal(resolverHorario("EVERY_5_MINUTES"), "*/5 * * * *");
   assert.equal(resolverHorario("0 10,14,17 * * 1-5"), "0 10,14,17 * * 1-5");
 
-  // O que não é nenhum dos três é recusado, não chutado.
+  // O que não bate é recusado, não chutado.
+  assert.equal(resolverHorario("9_AM+SEGUNDA"), null);
+  assert.equal(resolverHorario("13_AM+EVERY_DAY"), null);
   assert.equal(resolverHorario("amanhã cedo"), null);
   assert.equal(resolverHorario("25:00"), null);
   assert.equal(resolverHorario(undefined), null);
@@ -672,12 +683,16 @@ test("resolverHorario aceita nome, hora e cron cru", () => {
 test("descreverHorario explica o cron em português", () => {
   assert.equal(descreverHorario("0 9 * * 1-5"), "09:00, de segunda a sexta");
   assert.equal(descreverHorario("30 10 * * 0,6"), "10:30, sábado e domingo");
+  assert.equal(descreverHorario("0 18 * * 6"), "18:00, sábado");
   assert.equal(descreverHorario("0 10,14,17 * * *"), "10:00, 14:00, 17:00, todos os dias");
 });
 
 test("Agenda entende horário por nome", () => {
   const agenda = new Agenda({
-    tarefas: [{ ...TAREFA, cron: "DIAS_UTEIS_9AM" }, { ...TAREFA, nome: "ruim", cron: "às 9 da manhã" }],
+    tarefas: [
+      { ...TAREFA, cron: "9_AM+MONDAY_TO_FRIDAY" },
+      { ...TAREFA, nome: "ruim", cron: "9_AM+SEGUNDA" },
+    ],
     bot: {},
     logger: { log() {}, error() {} },
   });
