@@ -183,8 +183,22 @@ só gerar texto. Falha na fonte não cancela a tarefa; o modelo é avisado de qu
 o dado não veio.
 
 Cron inválido ou tarefa sem telefone são recusados na subida, com erro no log.
-No painel dá para ver as tarefas e disparar qualquer uma na hora, sem esperar
-o horário. O `agenda.json` fica fora do versionamento porque tem telefone.
+O `agenda.json` fica fora do versionamento porque tem telefone.
+
+### Editar pelo painel
+
+A seção Agenda do painel edita as tarefas: cada campo é um input, o horário
+tem sugestões das combinações válidas, e há botões para criar, remover,
+salvar e disparar na hora. Salvar grava no `agenda.json` e reagenda no mesmo
+instante, sem reiniciar o servidor.
+
+A validação roda antes de gravar e devolve o problema por tarefa (`"x":
+horário inválido (10 da noite)`); quando falha, nada é escrito. O refresh
+automático não redesenha a seção enquanto houver alteração não salva, para
+não apagar o que está sendo digitado.
+
+Rotas: `GET /api/horarios` (vocabulário de horários), `PUT /api/tarefas`
+(salva a agenda inteira) e `POST /api/tarefas/:nome/executar`.
 
 ## Ritmo de digitação
 

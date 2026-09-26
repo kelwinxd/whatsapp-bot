@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import { ZapiAdapter } from "./src/adapters/whatsapp/ZapiAdapter.js";
 import { EvolutionAdapter } from "./src/adapters/whatsapp/EvolutionAdapter.js";
 import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
@@ -700,4 +702,74 @@ test("Agenda entende horário por nome", () => {
   assert.equal(agenda.iniciar(), 1);
   assert.equal(agenda.listar()[0].quando, "09:00, de segunda a sexta");
   agenda.parar();
+});
+
+test("Agenda.validar aponta cada problema", () => {
+  const agenda = new Agenda({ tarefas: [], bot: {}, logger: { log() {}, error() {} } });
+
+  assert.deepEqual(agenda.validar([TAREFA]), []);
+
+  const problemas = agenda.validar([
+    { ...TAREFA, nome: "" },
+    { ...TAREFA, telefone: "" },
+    { ...TAREFA, instrucao: " " },
+    { ...TAREFA, nome: "horario-ruim", cron: "9 da manhã" },
+    { ...TAREFA, nome: "fonte-ruim", fonte: "bible-api.com" },
+    { ...TAREFA, nome: "lembrete-agua" },
+    { ...TAREFA, nome: "lembrete-agua" },
+  ]);
+
+  assert.match(problemas.join("\n"), /falta o nome/);
+  assert.match(problemas.join("\n"), /falta o telefone/);
+  assert.match(problemas.join("\n"), /falta a instrução/);
+  assert.match(problemas.join("\n"), /horário inválido \(9 da manhã\)/);
+  assert.match(problemas.join("\n"), /fonte precisa ser uma URL/);
+  assert.match(problemas.join("\n"), /nome repetido/);
+
+  assert.deepEqual(agenda.validar("não é lista"), [
+    "formato inválido: esperava uma lista de tarefas",
+  ]);
+});
+
+test("Agenda.salvar grava, normaliza e reagenda", async () => {
+  const caminho = `${tmpdir()}/agenda-teste-${Date.now()}.json`;
+  const agenda = new Agenda({
+    tarefas: [],
+    bot: {},
+    arquivo: caminho,
+    logger: { log() {}, error() {} },
+  });
+
+  const salvas = await agenda.salvar([
+    { nome: "  versiculo  ", cron: "8_AM+EVERY_DAY", ativa: true, telefone: "(19) 99999-9999", instrucao: " manda o versículo " },
+    { nome: "desligada", cron: "EVERY_HOUR", ativa: false, telefone: "5519999999999", instrucao: "nada" },
+  ]);
+
+  // Só a ativa vai para o cron; as duas ficam no arquivo.
+  assert.deepEqual(salvas.map((t) => [t.nome, t.agendada]), [["versiculo", true], ["desligada", false]]);
+
+  const gravado = JSON.parse(await readFile(caminho, "utf8"));
+  assert.equal(gravado.tarefas.length, 2);
+  // Espaços aparados e telefone só com dígitos.
+  assert.equal(gravado.tarefas[0].nome, "versiculo");
+  assert.equal(gravado.tarefas[0].telefone, "19999999999");
+  assert.equal(gravado.tarefas[0].instrucao, "manda o versículo");
+  assert.equal(gravado.fusoHorario, "America/Sao_Paulo");
+
+  agenda.parar();
+  await rm(caminho, { force: true });
+});
+
+test("Agenda.salvar recusa tarefa inválida sem gravar nada", async () => {
+  const caminho = `${tmpdir()}/agenda-invalida-${Date.now()}.json`;
+  const agenda = new Agenda({ tarefas: [TAREFA], bot: {}, arquivo: caminho, logger: { log() {}, error() {} } });
+
+  await assert.rejects(
+    () => agenda.salvar([{ ...TAREFA, cron: "qualquer coisa" }]),
+    /horário inválido/,
+  );
+
+  // Nada foi escrito e a agenda em memória continua a anterior.
+  await assert.rejects(() => readFile(caminho, "utf8"), { code: "ENOENT" });
+  assert.equal(agenda.tarefas[0].cron, TAREFA.cron);
 });

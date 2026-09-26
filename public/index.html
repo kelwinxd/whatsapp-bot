@@ -60,12 +60,18 @@
       .tipo.erro { color: var(--vermelho); }
       .tipo.ignorada { color: var(--amarelo); }
       .tipo.agendada { color: var(--azul); }
-      .tarefa { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--borda); padding: 10px 0; }
+      .tarefa { border-bottom: 1px solid var(--borda); padding: 14px 0; }
       .tarefa:last-child { border-bottom: 0; }
-      .tarefa .nome { font-weight: 600; }
+      .tarefa .cabecalho { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .tarefa .cabecalho label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--apagado); }
+      .tarefa .acoes { margin-left: auto; display: flex; gap: 6px; }
+      .tarefa .acoes button { font-size: 12px; padding: 6px 9px; }
+      .tarefa .grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
       .tarefa .quando { color: var(--apagado); font-size: 12px; font-family: ui-monospace, monospace; }
-      .tarefa .desligada { color: var(--apagado); font-size: 12px; }
-      .tarefa button { margin-left: auto; font-size: 13px; }
+      .tarefa input[type="checkbox"] { width: auto; }
+      .rodapeAgenda { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+      .rodapeAgenda .aviso { font-size: 13px; }
+      @media (max-width: 560px) { .tarefa .grade2 { grid-template-columns: 1fr; } }
       .tipo\.envio-manual, .tipo.envio-manual { color: var(--azul); }
       .vazio { color: var(--apagado); font-size: 13px; }
       #aviso { margin-top: 10px; font-size: 13px; min-height: 18px; }
@@ -146,46 +152,156 @@
           .join("");
       }
 
-      function pintarTarefas(tarefas) {
-        if (!tarefas?.length) {
-          $("tarefas").innerHTML =
-            '<p class="vazio">Nenhuma tarefa. Crie um agenda.json a partir do agenda.example.json.</p>';
-          return;
+      // A agenda e editavel, entao o refresh automatico nao pode sobrescrever o
+      // que esta sendo digitado: enquanto houver edicao pendente, a secao nao
+      // e redesenhada.
+      let agendaSuja = false;
+      let vocabulario = { horas: [], dias: [], frequencias: [] };
+
+      function opcoesDeHorario() {
+        const combinacoes = [];
+        for (const h of vocabulario.horas) {
+          for (const d of vocabulario.dias) combinacoes.push(h + "+" + d);
         }
-        $("tarefas").innerHTML = tarefas
-          .map(
-            (t) => `<div class="tarefa">
-                <span class="ponto ${t.agendada ? "on" : "off"}"></span>
-                <span>
-                  <span class="nome">${escapar(t.nome)}</span>
-                  <span class="quando">${escapar(t.quando)}</span>
-                  ${t.fonte ? "<span class=\"quando\">· com fonte</span>" : ""}
-                  ${t.ativa ? "" : '<span class="desligada">· desativada</span>'}
-                  <br /><span class="quando">→ ${escapar(t.telefone)}</span>
-                </span>
-                <button data-tarefa="${escapar(t.nome)}">Executar agora</button>
-              </div>`,
-          )
-          .join("");
+        return [...vocabulario.frequencias, ...combinacoes];
       }
 
-      $("tarefas").addEventListener("click", async (ev) => {
-        const nome = ev.target.dataset?.tarefa;
-        if (!nome) return;
-        const botao = ev.target;
-        const rotuloOriginal = botao.textContent;
-        botao.disabled = true;
-        botao.textContent = "Executando...";
+      function linhaDeTarefa(t, i) {
+        const v = (x) => escapar(x ?? "");
+        return `<div class="tarefa" data-i="${i}">
+            <div class="cabecalho">
+              <label><input type="checkbox" data-campo="ativa" ${t.ativa ? "checked" : ""} /> ativa</label>
+              <span class="quando">${v(t.quando)}</span>
+              <span class="acoes">
+                <button data-acao="executar">Executar agora</button>
+                <button data-acao="remover">Remover</button>
+              </span>
+            </div>
+            <div class="grade2">
+              <input data-campo="nome" placeholder="nome-da-tarefa" value="${v(t.nome)}" />
+              <input data-campo="cron" list="horariosDisponiveis" placeholder="9_AM+EVERY_DAY" value="${v(t.cron)}" />
+              <input data-campo="telefone" inputmode="numeric" placeholder="5519999999999" value="${v(t.telefone)}" />
+              <input data-campo="fonte" placeholder="URL da fonte (opcional)" value="${v(t.fonte)}" />
+            </div>
+            <textarea data-campo="instrucao" placeholder="O que pedir ao modelo..." style="margin-top:8px">${v(t.instrucao)}</textarea>
+          </div>`;
+      }
+
+      function pintarTarefas(tarefas) {
+        if (agendaSuja) return;
+        const corpo = tarefas?.length
+          ? tarefas.map(linhaDeTarefa).join("")
+          : '<p class="vazio">Nenhuma tarefa ainda. Clique em "Nova tarefa".</p>';
+        const opcoes = opcoesDeHorario().map((o) => `<option value="${o}">`).join("");
+
+        $("tarefas").innerHTML = `${corpo}
+          <datalist id="horariosDisponiveis">${opcoes}</datalist>
+          <div class="rodapeAgenda">
+            <button id="novaTarefa">Nova tarefa</button>
+            <button class="primario" id="salvarAgenda">Salvar agenda</button>
+            <span class="aviso" id="avisoAgenda"></span>
+          </div>`;
+      }
+
+      function lerTarefasDaTela() {
+        return [...document.querySelectorAll(".tarefa")].map((linha) => {
+          const campo = (nome) => linha.querySelector(`[data-campo="${nome}"]`);
+          return {
+            nome: campo("nome").value.trim(),
+            cron: campo("cron").value.trim(),
+            ativa: campo("ativa").checked,
+            telefone: campo("telefone").value.trim(),
+            instrucao: campo("instrucao").value.trim(),
+            fonte: campo("fonte").value.trim() || undefined,
+          };
+        });
+      }
+
+      function avisarAgenda(texto, cor) {
+        const aviso = $("avisoAgenda");
+        if (!aviso) return;
+        aviso.textContent = texto;
+        aviso.style.color = cor;
+      }
+
+      function marcarSuja() {
+        agendaSuja = true;
+        avisarAgenda("alterações não salvas", "var(--amarelo)");
+      }
+
+      // Redesenha com a lista que está na tela (mais ou menos uma linha),
+      // preservando o que foi digitado e sem perder o estado de "suja".
+      function redesenharComEdicoes(tarefas) {
+        agendaSuja = false;
+        pintarTarefas(tarefas.map((t) => ({ ...t, quando: t.quando ?? "não salva" })));
+        marcarSuja();
+      }
+
+      async function salvarAgenda() {
+        avisarAgenda("Salvando...", "var(--apagado)");
         try {
-          const r = await fetch(`/api/tarefas/${encodeURIComponent(nome)}/executar`, { method: "POST" });
-          const d = await r.json();
-          if (!r.ok) throw new Error(d.erro ?? "falhou");
-          botao.textContent = "✅ Enviada";
-          atualizar();
+          const resposta = await fetch("/api/tarefas", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tarefas: lerTarefasDaTela() }),
+          });
+          const dados = await resposta.json();
+          if (!resposta.ok) {
+            throw new Error(dados.problemas?.length ? dados.problemas.join(" · ") : dados.erro ?? "falhou");
+          }
+          agendaSuja = false;
+          pintarTarefas(dados.tarefas);
+          avisarAgenda("✅ salva e reagendada", "var(--verde)");
         } catch (erro) {
-          botao.textContent = "❌ " + erro.message;
-        } finally {
-          setTimeout(() => { botao.disabled = false; botao.textContent = rotuloOriginal; }, 2500);
+          avisarAgenda("❌ " + erro.message, "var(--vermelho)");
+        }
+      }
+
+      $("tarefas").addEventListener("input", marcarSuja);
+      $("tarefas").addEventListener("change", marcarSuja);
+
+      $("tarefas").addEventListener("click", async (ev) => {
+        const botao = ev.target.closest("button");
+        if (!botao) return;
+
+        if (botao.id === "salvarAgenda") return salvarAgenda();
+
+        if (botao.id === "novaTarefa") {
+          redesenharComEdicoes([
+            ...lerTarefasDaTela(),
+            { nome: "", cron: "9_AM+EVERY_DAY", ativa: false, telefone: "", instrucao: "" },
+          ]);
+          return;
+        }
+
+        const linha = botao.closest(".tarefa");
+        if (!linha) return;
+
+        if (botao.dataset.acao === "remover") {
+          const indice = Number(linha.dataset.i);
+          redesenharComEdicoes(lerTarefasDaTela().filter((_, i) => i !== indice));
+          return;
+        }
+
+        if (botao.dataset.acao === "executar") {
+          const nome = linha.querySelector('[data-campo="nome"]').value.trim();
+          const rotulo = botao.textContent;
+          botao.disabled = true;
+          botao.textContent = "Executando...";
+          try {
+            const resposta = await fetch(`/api/tarefas/${encodeURIComponent(nome)}/executar`, { method: "POST" });
+            const dados = await resposta.json();
+            if (!resposta.ok) throw new Error(dados.erro ?? "falhou");
+            botao.textContent = "✅ Enviada";
+            atualizar();
+          } catch (erro) {
+            botao.textContent = "❌ " + erro.message;
+          } finally {
+            setTimeout(() => {
+              botao.disabled = false;
+              botao.textContent = rotulo;
+            }, 2500);
+          }
         }
       });
 
@@ -271,7 +387,16 @@
         }
       });
 
-      atualizar();
+      // O vocabulário de horários vem do servidor, para não duplicar as tabelas
+      // aqui no navegador.
+      fetch("/api/horarios")
+        .then((r) => r.json())
+        .then((v) => {
+          vocabulario = v;
+        })
+        .catch(() => {})
+        .finally(atualizar);
+
       setInterval(atualizar, 3000);
     </script>
   </body>

@@ -1,6 +1,7 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { perfisDisponiveis } from "./core/prompt.js";
+import { HORAS, DIAS, FREQUENCIAS } from "./core/horarios.js";
 
 // Camada HTTP: só traduz requisição em chamada de serviço. Recebe o BotService
 // pronto, então dá para subir o servidor com um serviço falso em teste.
@@ -58,6 +59,31 @@ export function criarServidor({ bot, metricas, agenda, config = {}, logger = con
       eventos: metricas.eventos,
     }),
   );
+
+  // O vocabulário de horários, para o painel montar as sugestões sem
+  // duplicar as tabelas em JavaScript do navegador.
+  app.get("/api/horarios", (_req, res) =>
+    res.json({
+      horas: Object.keys(HORAS),
+      dias: Object.keys(DIAS),
+      frequencias: Object.keys(FREQUENCIAS),
+    }),
+  );
+
+  // Salva a agenda inteira e reagenda na hora. Substitui a lista toda em vez
+  // de editar item por item: o painel manda o que está na tela, e o arquivo
+  // passa a ser exatamente aquilo.
+  app.put("/api/tarefas", async (req, res) => {
+    if (!agenda) return res.status(404).json({ erro: "agenda não configurada" });
+
+    try {
+      const tarefas = await agenda.salvar(req.body?.tarefas);
+      logger.log(`💾 Agenda salva: ${tarefas.length} tarefa(s)`);
+      res.json({ salva: true, tarefas });
+    } catch (erro) {
+      res.status(400).json({ erro: erro.message, problemas: erro.problemas ?? [] });
+    }
+  });
 
   // Dispara uma tarefa agora, sem esperar o horário — é assim que se testa
   // uma tarefa nova sem mexer no cron.
