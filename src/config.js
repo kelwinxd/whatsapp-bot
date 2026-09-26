@@ -18,6 +18,20 @@ function carregarAgenda(caminho = process.env.AGENDA_ARQUIVO ?? "agenda.json") {
   }
 }
 
+const DETALHES_DE_IMAGEM = ["auto", "low", "high"];
+
+// Valor errado aqui faria a OpenAI recusar a mensagem só quando alguém
+// mandasse uma foto — melhor parar na subida.
+function validarDetalhe(valor) {
+  const limpo = String(valor).trim().toLowerCase();
+  if (!DETALHES_DE_IMAGEM.includes(limpo)) {
+    throw new Error(
+      `OPENAI_IMAGE_DETAIL inválido: "${valor}". Opções: ${DETALHES_DE_IMAGEM.join(", ")}`,
+    );
+  }
+  return limpo;
+}
+
 export const config = {
   porta: Number(process.env.PORT ?? 3000),
 
@@ -49,6 +63,16 @@ export const config = {
     maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? 300),
     // whisper-1 custa US$ 0,006/min; gpt-4o-mini-transcribe, metade disso.
     modeloTranscricao: process.env.OPENAI_TRANSCRIBE_MODEL ?? "whisper-1",
+  },
+
+  imagem: {
+    // Quanto do detalhe da imagem o modelo processa:
+    //   low  -> um bloco de 512x512, custo fixo e baixo; bom para "que comida
+    //           é essa?", ruim para ler letra miúda
+    //   high -> fatia a imagem em vários blocos e lê detalhe fino (rótulo,
+    //           tabela nutricional), custando bem mais
+    //   auto -> a OpenAI decide pelo tamanho da imagem
+    detalhe: validarDetalhe(process.env.OPENAI_IMAGE_DETAIL ?? "auto"),
   },
 
   // Número usado nos testes manuais de envio (npm run enviar). Fica no .env

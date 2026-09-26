@@ -44,6 +44,17 @@ No histórico fica apenas `[imagem enviada] <pergunta>`, nunca a imagem. Imagem
 no `gpt-4o-mini` custa 33x em tokens, e guardá-la faria o modelo ser cobrado
 por ela de novo em toda resposta seguinte da conversa.
 
+Quanto detalhe o modelo processa vai em `OPENAI_IMAGE_DETAIL`:
+
+| Valor | Efeito |
+| --- | --- |
+| `low` | um bloco de 512x512, custo fixo e baixo; bom para "que comida é essa?" |
+| `high` | fatia a imagem e lê letra miúda (rótulo, tabela nutricional), custando mais |
+| `auto` | padrão; a OpenAI decide pelo tamanho da imagem |
+
+Valor inválido para o servidor na subida, em vez de falhar só quando alguém
+manda uma foto.
+
 ## Áudio recebido
 
 Áudio vira texto antes de chegar ao modelo de conversa: o adaptador baixa o

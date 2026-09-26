@@ -12,7 +12,7 @@ console.log("🔧 Iniciando...");
 
 const dependencias = montarDependencias(config);
 const metricas = new Metricas();
-const bot = new BotService({ ...dependencias, prompt: config.prompt, metricas, ritmo: config.ritmo });
+const bot = new BotService({ ...dependencias, prompt: config.prompt, metricas, ritmo: config.ritmo, imagem: config.imagem });
 const agenda = new Agenda({
   tarefas: config.agenda.tarefas,
   fusoHorario: config.agenda.fusoHorario,
@@ -26,6 +26,7 @@ const server = app.listen(config.porta, () => {
   console.log(`📮 Webhook em POST /webhook`);
   console.log(`📱 WhatsApp: ${dependencias.whatsapp.nome} | 🧠 IA: ${dependencias.ia.nome}`);
   console.log(`💬 Prompt: ${config.prompt.textoCustomizado ? "customizado" : config.prompt.perfil}`);
+  console.log(`🖼️  Detalhe de imagem: ${config.imagem.detalhe}`);
   console.log(`🖥️  Painel em http://localhost:${config.porta}/painel`);
   const quantas = agenda.iniciar();
   if (quantas > 0) console.log(`⏰ ${quantas} tarefa(s) na agenda`);

@@ -58,6 +58,7 @@ export class BotService {
     prompt = { perfil: "suplementos" },
     metricas = metricasNulas,
     ritmo = {},
+    imagem = { detalhe: "auto" },
     logger = console,
     // Injetáveis para o teste não depender de sorteio nem esperar de verdade.
     aleatorio = Math.random,
@@ -69,6 +70,7 @@ export class BotService {
     this.prompt = prompt;
     this.metricas = metricas;
     this.ritmo = { ...RITMO_PADRAO, ...ritmo };
+    this.imagem = imagem;
     this.logger = logger;
     this.aleatorio = aleatorio;
     this.dormir = dormir;
@@ -179,7 +181,14 @@ export class BotService {
     return {
       paraIA: [
         { type: "text", text: pergunta },
-        { type: "image_url", image_url: { url: `data:${mimetype};base64,${base64}` } },
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:${mimetype};base64,${base64}`,
+            // Quanto detalhe o modelo processa — muda custo e precisão.
+            detail: this.imagem.detalhe,
+          },
+        },
       ],
       paraHistorico: `[imagem enviada] ${pergunta}`,
     };

@@ -817,3 +817,31 @@ test("Agenda.listar entrega o horário já decomposto para o painel", () => {
   assert.deepEqual(agenda.listar()[0].horario, { hora: "10_PM", dias: "WEEKEND" });
   assert.equal(agenda.listar()[0].quando, "22:00, sábado e domingo");
 });
+
+test("o detalhe da imagem configurado chega na chamada", async () => {
+  const chamadas = [];
+  const montar = (imagem) =>
+    new BotService({
+      whatsapp: {
+        nome: "falso",
+        interpretarWebhook: (c) => evolution.interpretarWebhook(c),
+        enviarTexto: async () => {},
+        obterMidiaBase64: async () => ({ base64: "AAAA", mimetype: "image/jpeg" }),
+      },
+      ia: { nome: "falsa", responder: async (p) => { chamadas.push(p.mensagens.at(-1).content); return "ok"; } },
+      conversas: new MemoriaRepo({ maxHistorico: 4 }),
+      ...(imagem ? { imagem } : {}),
+      dormir: async () => {},
+      logger: { log() {}, error() {} },
+    });
+
+  await montar({ detalhe: "high" }).processarWebhook(webhookEvolutionImagem("lê o rótulo"));
+  assert.equal(chamadas[0][1].image_url.detail, "high");
+
+  await montar({ detalhe: "low" }).processarWebhook(webhookEvolutionImagem("que comida é essa?"));
+  assert.equal(chamadas[1][1].image_url.detail, "low");
+
+  // Sem configuração, "auto": deixa a OpenAI decidir pelo tamanho da imagem.
+  await montar(null).processarWebhook(webhookEvolutionImagem("e isso?"));
+  assert.equal(chamadas[2][1].image_url.detail, "auto");
+});
