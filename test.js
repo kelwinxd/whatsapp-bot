@@ -8,7 +8,7 @@ import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
 import { BotService } from "./src/core/BotService.js";
 import { montarPromptDeSistema } from "./src/core/prompt.js";
 import { Metricas } from "./src/core/Metricas.js";
-import { Agenda } from "./src/core/Agenda.js";
+import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
 import { resolverHorario, descreverHorario, decomporHorario, vocabulario } from "./src/core/horarios.js";
 
 // Rode com: npm test
@@ -580,7 +580,7 @@ const TAREFA = {
   nome: "lembrete-agua",
   cron: "0 10 * * *",
   ativa: true,
-  telefone: "5519999999999",
+  telefones: ["5519999999999"],
   instrucao: "Lembra de beber água.",
 };
 
@@ -591,7 +591,7 @@ test("Agenda: agenda só as tarefas válidas e ativas", () => {
       TAREFA,
       { ...TAREFA, nome: "desativada", ativa: false },
       { ...TAREFA, nome: "cron-ruim", cron: "todo dia às 10" },
-      { ...TAREFA, nome: "sem-telefone", telefone: undefined },
+      { ...TAREFA, nome: "sem-telefone", telefones: [] },
     ],
     bot: {},
     logger: { log() {}, error: (m) => erros.push(m) },
@@ -711,7 +711,7 @@ test("Agenda.validar aponta cada problema", () => {
 
   const problemas = agenda.validar([
     { ...TAREFA, nome: "" },
-    { ...TAREFA, telefone: "" },
+    { ...TAREFA, telefones: [] },
     { ...TAREFA, instrucao: " " },
     { ...TAREFA, nome: "horario-ruim", cron: "9 da manhã" },
     { ...TAREFA, nome: "fonte-ruim", fonte: "bible-api.com" },
@@ -741,8 +741,8 @@ test("Agenda.salvar grava, normaliza e reagenda", async () => {
   });
 
   const salvas = await agenda.salvar([
-    { nome: "  versiculo  ", cron: "8_AM+EVERY_DAY", ativa: true, telefone: "(19) 99999-9999", instrucao: " manda o versículo " },
-    { nome: "desligada", cron: "EVERY_HOUR", ativa: false, telefone: "5519999999999", instrucao: "nada" },
+    { nome: "  versiculo  ", cron: "8_AM+EVERY_DAY", ativa: true, telefones: ["+55 (19) 99999-9999"], instrucao: " manda o versículo " },
+    { nome: "desligada", cron: "EVERY_HOUR", ativa: false, telefones: ["5519999999999"], instrucao: "nada" },
   ]);
 
   // Só a ativa vai para o cron; as duas ficam no arquivo.
@@ -752,7 +752,7 @@ test("Agenda.salvar grava, normaliza e reagenda", async () => {
   assert.equal(gravado.tarefas.length, 2);
   // Espaços aparados e telefone só com dígitos.
   assert.equal(gravado.tarefas[0].nome, "versiculo");
-  assert.equal(gravado.tarefas[0].telefone, "19999999999");
+  assert.deepEqual(gravado.tarefas[0].telefones, ["5519999999999"]);
   assert.equal(gravado.tarefas[0].instrucao, "manda o versículo");
   assert.equal(gravado.fusoHorario, "America/Sao_Paulo");
 
@@ -844,4 +844,65 @@ test("o detalhe da imagem configurado chega na chamada", async () => {
   // Sem configuração, "auto": deixa a OpenAI decidir pelo tamanho da imagem.
   await montar(null).processarWebhook(webhookEvolutionImagem("e isso?"));
   assert.equal(chamadas[2][1].image_url.detail, "auto");
+});
+
+// --- Vários números por tarefa ---------------------------------------------
+
+test("normalizarTelefones aceita um, vários e string com vírgula", () => {
+  assert.deepEqual(normalizarTelefones({ telefone: "5519999999999" }), ["5519999999999"]);
+  assert.deepEqual(normalizarTelefones({ telefones: ["5519999999999", "5511888888888"] }), [
+    "5519999999999",
+    "5511888888888",
+  ]);
+  // Como vem do campo do painel: uma string com vírgulas e formatação.
+  assert.deepEqual(normalizarTelefones({ telefones: "+55 (19) 99999-9999, 5511888888888" }), [
+    "5519999999999",
+    "5511888888888",
+  ]);
+  assert.deepEqual(normalizarTelefones({}), []);
+  // telefones tem prioridade sobre o campo antigo.
+  assert.deepEqual(normalizarTelefones({ telefone: "111", telefones: ["222"] }), ["222"]);
+});
+
+test("tarefa dispara para todos os números, gerando o texto uma vez", async () => {
+  const enviadas = [];
+  let chamadasNaIA = 0;
+  const metricas = new Metricas();
+  const bot = new BotService({
+    whatsapp: { nome: "falso", enviarTexto: async (p) => enviadas.push([p.telefone, p.texto]) },
+    ia: { nome: "falsa", responder: async () => { chamadasNaIA++; return "Bebe água 💧"; } },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    prompt: { perfil: "whatsapp", maxMensagens: 3 },
+    metricas,
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+
+  const agenda = new Agenda({
+    tarefas: [{ ...TAREFA, telefones: ["5519999999999", "5511888888888"] }],
+    bot,
+    logger: { log() {}, error() {} },
+  });
+
+  await agenda.executar("lembrete-agua");
+
+  // Uma chamada de IA, duas entregas.
+  assert.equal(chamadasNaIA, 1);
+  assert.deepEqual(enviadas, [
+    ["5519999999999", "Bebe água 💧"],
+    ["5511888888888", "Bebe água 💧"],
+  ]);
+
+  // Cada um tem seu próprio histórico.
+  assert.equal((await bot.conversas.historico("5511888888888")).length, 1);
+  assert.equal(metricas.eventos[0].destinos, 2);
+});
+
+test("valida cada número da lista", () => {
+  const agenda = new Agenda({ tarefas: [], bot: {}, logger: { log() {}, error() {} } });
+
+  assert.deepEqual(agenda.validar([{ ...TAREFA, telefones: ["5519999999999", "5511888888888"] }]), []);
+
+  const problemas = agenda.validar([{ ...TAREFA, telefones: ["5519999999999", "99999"] }]);
+  assert.match(problemas.join(" "), /telefone incompleto \(99999\)/);
 });

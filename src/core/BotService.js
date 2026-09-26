@@ -216,8 +216,12 @@ export class BotService {
   // Mensagem que o bot inicia, vinda da agenda. Não existe pergunta de
   // ninguém: a instrução da tarefa faz esse papel, e a fonte externa (quando a
   // tarefa tem uma) entra como contexto.
-  async executarTarefa({ nome, telefone, instrucao, contexto }) {
+  async executarTarefa({ nome, telefones, telefone, instrucao, contexto }) {
     const inicio = Date.now();
+    // Aceita um número ou vários; o texto é gerado uma vez só e enviado a
+    // todos — pedir ao modelo por destinatário custaria N vezes mais e cada
+    // pessoa receberia uma versão diferente da mesma mensagem.
+    const destinos = (telefones ?? [telefone]).filter(Boolean);
 
     const pedido = contexto
       ? `${instrucao}\n\nUse estes dados, recém-buscados, como base:\n${contexto}`
@@ -231,16 +235,19 @@ export class BotService {
       });
       const iaMs = Date.now() - antesDaIA;
 
-      const partes = await this.enviarPartes(telefone, resposta);
-
-      // Só a resposta entra no histórico: a instrução é nossa, não da pessoa,
-      // e veria como se ela tivesse pedido isso.
-      await this.conversas.acrescentar(telefone, { role: "assistant", content: resposta });
+      let partes = [];
+      for (const destino of destinos) {
+        partes = await this.enviarPartes(destino, resposta);
+        // Só a resposta entra no histórico: a instrução é nossa, não da
+        // pessoa, e ficaria como se ela tivesse pedido isso.
+        await this.conversas.acrescentar(destino, { role: "assistant", content: resposta });
+      }
 
       this.metricas.registrar({
         tipo: "agendada",
         tarefa: nome,
-        telefone,
+        telefone: destinos.join(", "),
+        destinos: destinos.length,
         pergunta: instrucao,
         resposta,
         temFonte: Boolean(contexto),
@@ -249,14 +256,16 @@ export class BotService {
         totalMs: Date.now() - inicio,
       });
 
-      this.logger.log(`⏰ Tarefa "${nome}" enviada para ${telefone} (${partes.length}x)`);
+      this.logger.log(
+        `⏰ Tarefa "${nome}" enviada para ${destinos.length} número(s): ${destinos.join(", ")}`,
+      );
       return { enviada: true, resposta, partes };
     } catch (erro) {
       this.logger.error(`❌ Tarefa "${nome}" falhou:`, erro);
       this.metricas.registrar({
         tipo: "erro",
         tarefa: nome,
-        telefone,
+        telefone: destinos.join(", "),
         erro: erro.message,
         totalMs: Date.now() - inicio,
       });

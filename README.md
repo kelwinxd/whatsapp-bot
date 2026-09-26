@@ -150,7 +150,7 @@ bot precisa estar no ar na hora marcada.
   "nome": "cotacao-do-dolar",
   "cron": "9_AM+MONDAY_TO_FRIDAY",
   "ativa": true,
-  "telefone": "5519999999999",
+  "telefones": ["5519999999999", "5511888888888"],
   "instrucao": "Diga a cotação atual do dólar em uma frase, com o valor de compra.",
   "fonte": "https://economia.awesomeapi.com.br/last/USD-BRL"
 }
@@ -187,6 +187,11 @@ mostram o horário em português ("09:00, de segunda a sexta").
 Sobre a sintaxe cron, para quando a composição não bastar: são cinco campos —
 minuto, hora, dia do mês, mês e dia da semana (0=domingo). `*` é "todos",
 vírgula lista valores e hífen faz intervalo.
+
+`telefones` aceita quantos números você quiser: o texto é gerado **uma vez**
+na OpenAI e enviado a todos, então mandar para mais de um número não multiplica
+o custo do modelo. Cada destino tem seu próprio histórico de conversa. O campo
+antigo `telefone`, no singular, continua sendo aceito.
 
 O campo `fonte` é opcional: a URL é buscada na hora e o conteúdo vai como
 contexto para o modelo — é o que permite trazer informação de fora em vez de

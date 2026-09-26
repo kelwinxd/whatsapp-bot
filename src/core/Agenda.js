@@ -12,6 +12,15 @@ import { resolverHorario, descreverHorario, decomporHorario } from "./horarios.j
 
 const LIMITE_DA_FONTE = 4_000; // caracteres enviados ao modelo
 
+// A tarefa pode ter um telefone ("telefone": "55...") ou vários
+// ("telefones": ["55...", "55..."], ou a mesma string separada por vírgula).
+// Tudo vira uma lista de números só com dígitos.
+export function normalizarTelefones(tarefa = {}) {
+  const bruto = tarefa.telefones ?? tarefa.telefone ?? [];
+  const lista = Array.isArray(bruto) ? bruto : String(bruto).split(/[,;]/);
+  return lista.map((n) => String(n).replace(/\D/g, "")).filter(Boolean);
+}
+
 export class Agenda {
   constructor({
     tarefas = [],
@@ -45,7 +54,7 @@ export class Agenda {
         this.logger.error(`❌ Tarefa "${tarefa.nome}": horário inválido (${tarefa.cron})`);
         continue;
       }
-      if (!tarefa.telefone || !tarefa.instrucao) {
+      if (normalizarTelefones(tarefa).length === 0 || !tarefa.instrucao) {
         this.logger.error(`❌ Tarefa "${tarefa.nome}": falta telefone ou instrucao`);
         continue;
       }
@@ -83,7 +92,7 @@ export class Agenda {
       // posição certa sem reinterpretar o valor salvo.
       horario: decomporHorario(t.cron),
       ativa: Boolean(t.ativa),
-      telefone: t.telefone,
+      telefones: normalizarTelefones(t),
       instrucao: t.instrucao,
       fonte: t.fonte ?? null,
       agendada: this.agendadas.has(t.nome),
@@ -106,8 +115,11 @@ export class Agenda {
       else if (vistos.has(tarefa.nome)) problemas.push(`${onde}: nome repetido`);
       else vistos.add(tarefa.nome);
 
-      if (!String(tarefa?.telefone ?? "").replace(/\D/g, "")) {
-        problemas.push(`${onde}: falta o telefone`);
+      const telefones = normalizarTelefones(tarefa ?? {});
+      if (telefones.length === 0) problemas.push(`${onde}: falta o telefone`);
+      // 12 dígitos = 55 + DDD + 8; 13 com o nono dígito.
+      for (const numero of telefones) {
+        if (numero.length < 10) problemas.push(`${onde}: telefone incompleto (${numero})`);
       }
       if (!tarefa?.instrucao?.trim()) problemas.push(`${onde}: falta a instrução`);
 
@@ -137,7 +149,7 @@ export class Agenda {
       nome: t.nome.trim(),
       cron: String(t.cron).trim(),
       ativa: Boolean(t.ativa),
-      telefone: String(t.telefone).replace(/\D/g, ""),
+      telefones: normalizarTelefones(t),
       instrucao: t.instrucao.trim(),
       ...(t.fonte ? { fonte: t.fonte.trim() } : {}),
     }));
@@ -179,7 +191,7 @@ export class Agenda {
 
     return this.bot.executarTarefa({
       nome,
-      telefone: tarefa.telefone,
+      telefones: normalizarTelefones(tarefa),
       instrucao: tarefa.instrucao,
       contexto,
     });

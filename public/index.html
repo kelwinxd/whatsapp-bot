@@ -224,7 +224,8 @@
             </div>
             <div class="grade2">
               <input data-campo="nome" placeholder="nome-da-tarefa" value="${v(t.nome)}" />
-              <input data-campo="telefone" inputmode="numeric" placeholder="5519999999999" value="${v(t.telefone)}" />
+              <input data-campo="telefones" placeholder="5519999999999, 5511888888888"
+                value="${v((t.telefones ?? []).join(", "))}" />
             </div>
             <div class="horario" style="margin-top:8px">
               ${selectQuando(horario)}
@@ -266,7 +267,8 @@
             nome: campo("nome").value.trim(),
             cron,
             ativa: campo("ativa").checked,
-            telefone: campo("telefone").value.trim(),
+            // Vários números separados por vírgula; o servidor normaliza.
+            telefones: campo("telefones").value.split(",").map((n) => n.trim()).filter(Boolean),
             instrucao: campo("instrucao").value.trim(),
             fonte: campo("fonte").value.trim() || undefined,
           };
@@ -343,7 +345,7 @@
             {
               nome: "",
               ativa: false,
-              telefone: "",
+              telefones: [],
               instrucao: "",
               horario: { hora: "8_AM", dias: "EVERY_DAY" },
             },

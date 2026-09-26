@@ -5,30 +5,39 @@
       "nome": "dica-da-manha",
       "cron": "8_AM+EVERY_DAY",
       "ativa": false,
-      "telefone": "5519999999999",
-      "instrucao": "Manda uma dica curta e prática do dia sobre suplementação ou alimentação. Uma mensagem só."
+      "instrucao": "Manda uma dica curta e prática do dia sobre suplementação ou alimentação. Uma mensagem só.",
+      "telefones": [
+        "5519999999999"
+      ]
     },
     {
       "nome": "lembrete-agua",
       "cron": "2_PM+MONDAY_TO_FRIDAY",
       "ativa": false,
-      "telefone": "5519999999999",
-      "instrucao": "Lembra a pessoa de beber água, de forma curta e sem soar robótico. Varie o jeito de dizer."
+      "instrucao": "Lembra a pessoa de beber água, de forma curta e sem soar robótico. Varie o jeito de dizer.",
+      "telefones": [
+        "5519999999999",
+        "5511888888888"
+      ]
     },
     {
       "nome": "cotacao-do-dolar",
       "cron": "9_AM+MONDAY_TO_FRIDAY",
       "ativa": false,
-      "telefone": "5519999999999",
       "instrucao": "Diga a cotação atual do dólar em uma frase, com o valor de compra.",
-      "fonte": "https://economia.awesomeapi.com.br/last/USD-BRL"
+      "fonte": "https://economia.awesomeapi.com.br/last/USD-BRL",
+      "telefones": [
+        "5519999999999"
+      ]
     },
     {
       "nome": "teste-rapido",
       "cron": "EVERY_5_MINUTES",
       "ativa": false,
-      "telefone": "5519999999999",
-      "instrucao": "Diga apenas: teste da agenda funcionando."
+      "instrucao": "Diga apenas: teste da agenda funcionando.",
+      "telefones": [
+        "5519999999999"
+      ]
     }
   ]
 }
