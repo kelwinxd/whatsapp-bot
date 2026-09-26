@@ -29,7 +29,10 @@ export const config = {
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
     modelo: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-    maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? 500),
+    // Rede de segurança, não controle de tamanho: quem dá forma à resposta é
+    // a instrução no prompt. Aqui, folga suficiente para o limite de palavras
+    // caber sem a frase ser cortada no meio.
+    maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? 300),
     // whisper-1 custa US$ 0,006/min; gpt-4o-mini-transcribe, metade disso.
     modeloTranscricao: process.env.OPENAI_TRANSCRIBE_MODEL ?? "whisper-1",
   },
@@ -46,6 +49,8 @@ export const config = {
   prompt: {
     // suplementos | whatsapp | puro (ver src/core/prompt.js)
     perfil: process.env.PROMPT_PERFIL ?? "suplementos",
+    // Tamanho pedido no prompt. 0 desliga a instrução de brevidade.
+    limitePalavras: Number(process.env.RESPOSTA_MAX_PALAVRAS ?? 60) || null,
     // Texto próprio; quando preenchido, ignora o perfil.
     textoCustomizado: process.env.SYSTEM_PROMPT,
   },

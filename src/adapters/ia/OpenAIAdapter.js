@@ -55,8 +55,19 @@ export class OpenAIAdapter extends ProvedorIA {
     }
 
     const dados = await resposta.json();
-    const texto = dados.choices?.[0]?.message?.content?.trim();
+    const escolha = dados.choices?.[0];
+    const texto = escolha?.message?.content?.trim();
     if (!texto) throw new Error("OpenAI devolveu resposta vazia");
+
+    // finish_reason "length" = a resposta foi cortada no meio da frase por
+    // bater no max_tokens. Sem esse aviso o problema é invisível: a mensagem
+    // chega no WhatsApp parecendo completa.
+    if (escolha.finish_reason === "length") {
+      console.warn(
+        `⚠️  Resposta truncada em ${this.maxTokens} tokens. Reduza RESPOSTA_MAX_PALAVRAS ou aumente OPENAI_MAX_TOKENS.`,
+      );
+    }
+
     return texto;
   }
 

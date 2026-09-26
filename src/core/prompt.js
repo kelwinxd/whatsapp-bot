@@ -9,7 +9,19 @@ const FORMATACAO = `Responda sempre em português do Brasil, de forma curta e na
 
 Formatação (o WhatsApp não entende markdown):
 - Negrito com *um asterisco*, itálico com _underline_. Nada de ##, ** ou [texto](link).
-- Listas com "- " ou "1. ". Parágrafos curtos.`;
+- Listas com "- " ou "1. ". Parágrafos curtos.
+Seja informal, sem respostas longas.
+`;
+
+// Instrução de tamanho. Separada porque o limite vem da configuração, e
+// porque é o que mais muda o resultado na prática: no WhatsApp, resposta
+// longa não é lida. Pedir para oferecer detalhe preserva a qualidade — a
+// informação continua disponível, só não vem toda de uma vez.
+const brevidade = (palavras) => `
+Tamanho da resposta:
+- No máximo ${palavras} palavras. Se a explicação completa não couber, dê a parte essencial e ofereça detalhar.
+- Uma ideia por mensagem. Sem introdução ("Claro!", "Ótima pergunta") e sem resumo no fim.
+- Só use lista quando forem 3 itens ou mais; caso contrário, escreva em frase.`;
 
 const SUPLEMENTOS = `Você é o assistente de WhatsApp de um serviço sobre suplementos e alimentação.
 ${FORMATACAO}
@@ -33,7 +45,7 @@ const PERFIS = {
   puro: null,
 };
 
-export function montarPromptDeSistema({ nome, perfil, textoCustomizado }) {
+export function montarPromptDeSistema({ nome, perfil, textoCustomizado, limitePalavras }) {
   if (textoCustomizado) return textoCustomizado;
 
   const base = PERFIS[perfil];
@@ -42,9 +54,11 @@ export function montarPromptDeSistema({ nome, perfil, textoCustomizado }) {
       `Perfil de prompt desconhecido: "${perfil}". Opções: ${Object.keys(PERFIS).join(", ")}`,
     );
   }
-  if (base === null) return null; // modo puro
+  // Modo puro: nada nosso vai junto, nem a instrução de tamanho.
+  if (base === null) return null;
 
-  return `${base}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
+  const limite = limitePalavras ? brevidade(limitePalavras) : "";
+  return `${base}\n${limite}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
 }
 
 export const perfisDisponiveis = Object.keys(PERFIS);

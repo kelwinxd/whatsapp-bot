@@ -442,3 +442,16 @@ test("enviarManual registra o disparo do painel", async () => {
   // Disparo manual não entra no histórico da conversa.
   assert.deepEqual(await bot.conversas.historico("5519999999999"), []);
 });
+
+test("limite de palavras entra no prompt e some no perfil puro", () => {
+  const comLimite = montarPromptDeSistema({ nome: "Kelwin", perfil: "whatsapp", limitePalavras: 60 });
+  assert.match(comLimite, /No máximo 60 palavras/);
+  assert.match(comLimite, /ofereça detalhar/);
+
+  // Sem limite configurado, nenhuma instrução de tamanho é enviada.
+  const semLimite = montarPromptDeSistema({ nome: "Kelwin", perfil: "whatsapp", limitePalavras: null });
+  assert.doesNotMatch(semLimite, /No máximo/);
+
+  // Puro continua puro: nem tamanho é imposto.
+  assert.equal(montarPromptDeSistema({ nome: "Kelwin", perfil: "puro", limitePalavras: 60 }), null);
+});
