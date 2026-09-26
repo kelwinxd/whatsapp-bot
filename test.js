@@ -9,7 +9,7 @@ import { BotService } from "./src/core/BotService.js";
 import { montarPromptDeSistema } from "./src/core/prompt.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { Agenda } from "./src/core/Agenda.js";
-import { resolverHorario, descreverHorario } from "./src/core/horarios.js";
+import { resolverHorario, descreverHorario, decomporHorario, vocabulario } from "./src/core/horarios.js";
 
 // Rode com: npm test
 // Nada aqui toca a rede: os adaptadores de WhatsApp e IA são substituídos por
@@ -772,4 +772,48 @@ test("Agenda.salvar recusa tarefa inválida sem gravar nada", async () => {
   // Nada foi escrito e a agenda em memória continua a anterior.
   await assert.rejects(() => readFile(caminho, "utf8"), { code: "ENOENT" });
   assert.equal(agenda.tarefas[0].cron, TAREFA.cron);
+});
+
+test("decomporHorario é o caminho inverso do resolverHorario", () => {
+  assert.deepEqual(decomporHorario("8_AM+EVERY_DAY"), { hora: "8_AM", dias: "EVERY_DAY" });
+  assert.deepEqual(decomporHorario("10_PM+WEEKEND"), { hora: "10_PM", dias: "WEEKEND" });
+
+  // Sem dias, assume todos; 00_AM cai no 12_AM, que é o que existe no select.
+  assert.deepEqual(decomporHorario("7_AM"), { hora: "7_AM", dias: "EVERY_DAY" });
+  assert.deepEqual(decomporHorario("00_AM"), { hora: "12_AM", dias: "EVERY_DAY" });
+
+  assert.deepEqual(decomporHorario("EVERY_5_MINUTES"), { frequencia: "EVERY_5_MINUTES" });
+
+  // O que os selects não representam vira "avançado", e o valor não se perde.
+  assert.deepEqual(decomporHorario("0 10,14 * * 1-5"), { avancado: "0 10,14 * * 1-5" });
+  assert.deepEqual(decomporHorario("08:30+MONDAY"), { avancado: "08:30+MONDAY" });
+});
+
+test("vocabulario traz rótulos em português, sem hora repetida", () => {
+  const v = vocabulario();
+
+  // 24 horas: 00_AM é apelido de 12_AM e fica fora da lista.
+  assert.equal(v.horas.length, 24);
+  assert.equal(v.horas.find((h) => h.valor === "8_AM").rotulo, "08:00 (8 AM)");
+  assert.equal(v.horas.some((h) => h.valor === "00_AM"), false);
+
+  assert.equal(v.dias.find((d) => d.valor === "MONDAY_TO_FRIDAY").rotulo, "De segunda a sexta");
+  assert.equal(v.dias.find((d) => d.valor === "SATURDAY").rotulo, "Sábado");
+  assert.equal(v.frequencias.find((f) => f.valor === "EVERY_HOUR").rotulo, "A cada hora");
+
+  // Todo valor exposto no painel precisa ser resolvível de volta.
+  for (const { valor } of v.frequencias) assert.ok(resolverHorario(valor));
+  for (const { valor } of v.horas) assert.ok(resolverHorario(`${valor}+EVERY_DAY`));
+  for (const { valor } of v.dias) assert.ok(resolverHorario(`8_AM+${valor}`));
+});
+
+test("Agenda.listar entrega o horário já decomposto para o painel", () => {
+  const agenda = new Agenda({
+    tarefas: [{ ...TAREFA, cron: "10_PM+WEEKEND" }],
+    bot: {},
+    logger: { log() {}, error() {} },
+  });
+
+  assert.deepEqual(agenda.listar()[0].horario, { hora: "10_PM", dias: "WEEKEND" });
+  assert.equal(agenda.listar()[0].quando, "22:00, sábado e domingo");
 });

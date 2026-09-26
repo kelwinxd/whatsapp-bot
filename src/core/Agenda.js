@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { writeFile } from "node:fs/promises";
-import { resolverHorario, descreverHorario } from "./horarios.js";
+import { resolverHorario, descreverHorario, decomporHorario } from "./horarios.js";
 
 // Mensagens que o bot manda por conta própria, na hora marcada — o inverso do
 // resto do projeto, que só reage a webhook. Cada tarefa é uma linha do
@@ -79,6 +79,9 @@ export class Agenda {
       nome: t.nome,
       cron: t.cron,
       quando: descreverHorario(resolverHorario(t.cron) ?? t.cron),
+      // Hora/dias/frequência separados, para o painel abrir os selects já na
+      // posição certa sem reinterpretar o valor salvo.
+      horario: decomporHorario(t.cron),
       ativa: Boolean(t.ativa),
       telefone: t.telefone,
       instrucao: t.instrucao,

@@ -67,6 +67,9 @@
       .tarefa .acoes { margin-left: auto; display: flex; gap: 6px; }
       .tarefa .acoes button { font-size: 12px; padding: 6px 9px; }
       .tarefa .grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .tarefa select { width: 100%; }
+      .tarefa .horario { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .tarefa .horario select:disabled { opacity: .45; }
       .tarefa .quando { color: var(--apagado); font-size: 12px; font-family: ui-monospace, monospace; }
       .tarefa input[type="checkbox"] { width: auto; }
       .rodapeAgenda { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
@@ -158,16 +161,41 @@
       let agendaSuja = false;
       let vocabulario = { horas: [], dias: [], frequencias: [] };
 
-      function opcoesDeHorario() {
-        const combinacoes = [];
-        for (const h of vocabulario.horas) {
-          for (const d of vocabulario.dias) combinacoes.push(h + "+" + d);
-        }
-        return [...vocabulario.frequencias, ...combinacoes];
+      const AVANCADO = "__AVANCADO__";
+
+      function opcoesSelect(itens, selecionado) {
+        return itens
+          .map(
+            (i) =>
+              `<option value="${escapar(i.valor)}"${i.valor === selecionado ? " selected" : ""}>${escapar(i.rotulo)}</option>`,
+          )
+          .join("");
+      }
+
+      // Um select só para "quando": os dias, as frequências de teste e a saída
+      // para cron cru. A hora fica num segundo select, desligado quando a
+      // opção escolhida não tem hora (frequência ou cron cru).
+      function selectQuando(horario) {
+        const escolhido = horario.frequencia ?? (horario.avancado ? AVANCADO : horario.dias);
+        return `<select data-campo="quando">
+            <optgroup label="Dias">${opcoesSelect(vocabulario.dias, escolhido)}</optgroup>
+            <optgroup label="Frequência">${opcoesSelect(vocabulario.frequencias, escolhido)}</optgroup>
+            <optgroup label="Outro">
+              <option value="${AVANCADO}"${escolhido === AVANCADO ? " selected" : ""}>Personalizado (cron)</option>
+            </optgroup>
+          </select>`;
+      }
+
+      function selectHora(horario) {
+        const semHora = Boolean(horario.frequencia || horario.avancado);
+        return `<select data-campo="hora"${semHora ? " disabled" : ""}>
+            ${opcoesSelect(vocabulario.horas, horario.hora ?? "8_AM")}
+          </select>`;
       }
 
       function linhaDeTarefa(t, i) {
         const v = (x) => escapar(x ?? "");
+        const horario = t.horario ?? { hora: "8_AM", dias: "EVERY_DAY" };
         return `<div class="tarefa" data-i="${i}">
             <div class="cabecalho">
               <label><input type="checkbox" data-campo="ativa" ${t.ativa ? "checked" : ""} /> ativa</label>
@@ -179,10 +207,15 @@
             </div>
             <div class="grade2">
               <input data-campo="nome" placeholder="nome-da-tarefa" value="${v(t.nome)}" />
-              <input data-campo="cron" list="horariosDisponiveis" placeholder="9_AM+EVERY_DAY" value="${v(t.cron)}" />
               <input data-campo="telefone" inputmode="numeric" placeholder="5519999999999" value="${v(t.telefone)}" />
-              <input data-campo="fonte" placeholder="URL da fonte (opcional)" value="${v(t.fonte)}" />
             </div>
+            <div class="horario" style="margin-top:8px">
+              ${selectQuando(horario)}
+              ${selectHora(horario)}
+            </div>
+            <input data-campo="avancado" placeholder="cron: 0 10,14,17 * * 1-5"
+              value="${v(horario.avancado)}" style="margin-top:8px${horario.avancado ? "" : ";display:none"}" />
+            <input data-campo="fonte" placeholder="URL da fonte (opcional)" value="${v(t.fonte)}" style="margin-top:8px" />
             <textarea data-campo="instrucao" placeholder="O que pedir ao modelo..." style="margin-top:8px">${v(t.instrucao)}</textarea>
           </div>`;
       }
@@ -192,10 +225,7 @@
         const corpo = tarefas?.length
           ? tarefas.map(linhaDeTarefa).join("")
           : '<p class="vazio">Nenhuma tarefa ainda. Clique em "Nova tarefa".</p>';
-        const opcoes = opcoesDeHorario().map((o) => `<option value="${o}">`).join("");
-
         $("tarefas").innerHTML = `${corpo}
-          <datalist id="horariosDisponiveis">${opcoes}</datalist>
           <div class="rodapeAgenda">
             <button id="novaTarefa">Nova tarefa</button>
             <button class="primario" id="salvarAgenda">Salvar agenda</button>
@@ -206,9 +236,18 @@
       function lerTarefasDaTela() {
         return [...document.querySelectorAll(".tarefa")].map((linha) => {
           const campo = (nome) => linha.querySelector(`[data-campo="${nome}"]`);
+          const quando = campo("quando").value;
+          // Remonta o valor que o servidor entende a partir dos selects.
+          const cron =
+            quando === AVANCADO
+              ? campo("avancado").value.trim()
+              : vocabulario.frequencias.some((f) => f.valor === quando)
+                ? quando
+                : `${campo("hora").value}+${quando}`;
+
           return {
             nome: campo("nome").value.trim(),
-            cron: campo("cron").value.trim(),
+            cron,
             ativa: campo("ativa").checked,
             telefone: campo("telefone").value.trim(),
             instrucao: campo("instrucao").value.trim(),
@@ -258,7 +297,22 @@
       }
 
       $("tarefas").addEventListener("input", marcarSuja);
-      $("tarefas").addEventListener("change", marcarSuja);
+
+      // Trocar o "quando" liga ou desliga os campos que fazem sentido: hora só
+      // quando a opção tem hora, e o campo de cron só no modo personalizado.
+      $("tarefas").addEventListener("change", (ev) => {
+        marcarSuja();
+        const select = ev.target.closest('[data-campo="quando"]');
+        if (!select) return;
+
+        const linha = select.closest(".tarefa");
+        const valor = select.value;
+        const eFrequencia = vocabulario.frequencias.some((f) => f.valor === valor);
+        const eAvancado = valor === AVANCADO;
+
+        linha.querySelector('[data-campo="hora"]').disabled = eFrequencia || eAvancado;
+        linha.querySelector('[data-campo="avancado"]').style.display = eAvancado ? "" : "none";
+      });
 
       $("tarefas").addEventListener("click", async (ev) => {
         const botao = ev.target.closest("button");
@@ -269,7 +323,13 @@
         if (botao.id === "novaTarefa") {
           redesenharComEdicoes([
             ...lerTarefasDaTela(),
-            { nome: "", cron: "9_AM+EVERY_DAY", ativa: false, telefone: "", instrucao: "" },
+            {
+              nome: "",
+              ativa: false,
+              telefone: "",
+              instrucao: "",
+              horario: { hora: "8_AM", dias: "EVERY_DAY" },
+            },
           ]);
           return;
         }

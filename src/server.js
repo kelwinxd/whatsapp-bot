@@ -1,7 +1,7 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { perfisDisponiveis } from "./core/prompt.js";
-import { HORAS, DIAS, FREQUENCIAS } from "./core/horarios.js";
+import { vocabulario } from "./core/horarios.js";
 
 // Camada HTTP: só traduz requisição em chamada de serviço. Recebe o BotService
 // pronto, então dá para subir o servidor com um serviço falso em teste.
@@ -62,13 +62,7 @@ export function criarServidor({ bot, metricas, agenda, config = {}, logger = con
 
   // O vocabulário de horários, para o painel montar as sugestões sem
   // duplicar as tabelas em JavaScript do navegador.
-  app.get("/api/horarios", (_req, res) =>
-    res.json({
-      horas: Object.keys(HORAS),
-      dias: Object.keys(DIAS),
-      frequencias: Object.keys(FREQUENCIAS),
-    }),
-  );
+  app.get("/api/horarios", (_req, res) => res.json(vocabulario()));
 
   // Salva a agenda inteira e reagenda na hora. Substitui a lista toda em vez
   // de editar item por item: o painel manda o que está na tela, e o arquivo

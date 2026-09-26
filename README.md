@@ -187,9 +187,13 @@ O `agenda.json` fica fora do versionamento porque tem telefone.
 
 ### Editar pelo painel
 
-A seção Agenda do painel edita as tarefas: cada campo é um input, o horário
-tem sugestões das combinações válidas, e há botões para criar, remover,
-salvar e disparar na hora. Salvar grava no `agenda.json` e reagenda no mesmo
+A seção Agenda do painel edita as tarefas. O horário são dois selects — um
+com os dias ("Todos os dias", "De segunda a sexta", "Fim de semana", cada dia
+da semana) e outro com a hora ("08:00 (8 AM)") —, então as chaves internas
+(`8_AM+EVERY_DAY`) não aparecem na tela. O select de dias também traz as
+frequências de teste e a opção "Personalizado (cron)", que revela um campo de
+texto para expressão crua; nesses dois casos o select de hora é desligado.
+Há botões para criar, remover, salvar e disparar na hora. Salvar grava no `agenda.json` e reagenda no mesmo
 instante, sem reiniciar o servidor.
 
 A validação roda antes de gravar e devolve o problema por tarefa (`"x":
