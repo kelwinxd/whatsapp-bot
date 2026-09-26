@@ -51,6 +51,8 @@ export const config = {
     perfil: process.env.PROMPT_PERFIL ?? "suplementos",
     // Tamanho pedido no prompt. 0 desliga a instrução de brevidade.
     limitePalavras: Number(process.env.RESPOSTA_MAX_PALAVRAS ?? 60) || null,
+    // Quantas mensagens o bot pode mandar por resposta (1 = mensagem única).
+    maxMensagens: Number(process.env.RESPOSTA_MAX_MENSAGENS ?? 3),
     // Texto próprio; quando preenchido, ignora o perfil.
     textoCustomizado: process.env.SYSTEM_PROMPT,
   },

@@ -1,12 +1,24 @@
-import { montarPromptDeSistema } from "./prompt.js";
+import { montarPromptDeSistema, SEPARADOR_DE_MENSAGENS } from "./prompt.js";
 import { metricasNulas } from "./Metricas.js";
 
 // Regra do bot, sem saber quem entrega a mensagem nem quem gera o texto:
 // recebe as três portas prontas pelo construtor (injeção de dependência).
 // É o que torna o fluxo testável sem rede — basta passar dublês.
 
-const MS_POR_CARACTERE = 100; // ~1 s a cada 10 caracteres
-const DIGITANDO_MAXIMO_MS = 15_000; // teto da Z-API; a Evolution aceita mais
+// Ritmo do "digitando...". Antes era 100ms por caractere com teto de 15s, o
+// que fazia a pessoa esperar um tempo absurdo antes de cada mensagem. Com
+// resposta picada isso somaria por mensagem, então o ritmo é mais rápido e o
+// teto, curto.
+const MS_POR_CARACTERE = 25;
+const DIGITANDO_MINIMO_MS = 800;
+const DIGITANDO_MAXIMO_MS = 3_000;
+
+// Uma linha contendo só o marcador (aceita espaços e mais hifens em volta).
+// String.raw porque num template comum o \s viraria um "s" solto e o \n, uma
+// quebra de linha de verdade — a regex casaria a coisa errada, silenciosamente.
+const REGEX_SEPARADOR = new RegExp(
+  String.raw`\n\s*${SEPARADOR_DE_MENSAGENS}-*\s*(\n|$)`,
+);
 
 const ERRO_AO_RESPONDER =
   "Tive um probleminha para responder agora 😕 Tenta de novo em instantes.";
@@ -63,7 +75,36 @@ export class BotService {
   // Tempo de "digitando..." proporcional ao tamanho do texto, em ms. Cada
   // adaptador converte para a unidade da sua API.
   digitandoMs(texto) {
-    return Math.min(DIGITANDO_MAXIMO_MS, Math.max(1000, texto.length * MS_POR_CARACTERE));
+    return Math.min(
+      DIGITANDO_MAXIMO_MS,
+      Math.max(DIGITANDO_MINIMO_MS, texto.length * MS_POR_CARACTERE),
+    );
+  }
+
+  // Divide no marcador que o modelo inseriu. O excedente é juntado na última
+  // mensagem em vez de descartado: perder pedaço de resposta é pior que mandar
+  // uma mensagem a mais.
+  dividirResposta(resposta, maximo = 1) {
+    let partes = resposta
+      .split(REGEX_SEPARADOR)
+      .map((p) => (p ?? "").trim())
+      .filter(Boolean);
+
+    // Na prática o modelo costuma ignorar o marcador e separar por linha em
+    // branco, que é a mesma intenção. Aceitar os dois evita depender de ele
+    // obedecer ao pedido literal.
+    if (partes.length <= 1 && maximo > 1) {
+      partes = resposta
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+    }
+
+    if (partes.length <= 1) return [resposta.trim()];
+    if (partes.length <= maximo) return partes;
+
+    const inicio = partes.slice(0, maximo - 1);
+    return [...inicio, partes.slice(maximo - 1).join("\n\n")];
   }
 
   // Quais mensagens o bot ignora. Fora daqui para ficar explícito e fácil de
@@ -167,11 +208,17 @@ export class BotService {
       await this.conversas.acrescentar(telefone, { role: "assistant", content: resposta });
 
       const antesDoEnvio = Date.now();
-      await this.whatsapp.enviarTexto({
-        telefone,
-        texto: resposta,
-        digitandoMs: this.digitandoMs(resposta),
-      });
+      const partes = this.dividirResposta(resposta, this.prompt.maxMensagens ?? 1);
+      // Sequencial de propósito: a Evolution só envia depois do "digitando...",
+      // então esperar cada uma é o que cria o ritmo de conversa. Em paralelo,
+      // as mensagens chegariam juntas e fora de ordem.
+      for (const parte of partes) {
+        await this.whatsapp.enviarTexto({
+          telefone,
+          texto: parte,
+          digitandoMs: this.digitandoMs(parte),
+        });
+      }
 
       this.metricas.registrar({
         tipo: "respondida",
@@ -181,14 +228,15 @@ export class BotService {
         resposta,
         midiaTipo: midia?.tipo ?? null,
         transcricao,
+        partes: partes.length,
         iaMs,
         envioMs: Date.now() - antesDoEnvio,
         totalMs: Date.now() - inicio,
       });
 
       if (transcricao) this.logger.log(`🎤 ${telefone} disse: ${transcricao}`);
-      this.logger.log(`🤖 ${telefone} (${iaMs}ms): ${resposta}`);
-      return { tratada: true, resposta };
+      this.logger.log(`🤖 ${telefone} (${iaMs}ms, ${partes.length}x): ${resposta}`);
+      return { tratada: true, resposta, partes };
     } catch (erro) {
       this.logger.error("❌ Erro ao responder:", erro);
       this.metricas.registrar({

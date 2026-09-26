@@ -23,6 +23,27 @@ Tamanho da resposta:
 - Uma ideia por mensagem. Sem introdução ("Claro!", "Ótima pergunta") e sem resumo no fim.
 - Só use lista quando forem 3 itens ou mais; caso contrário, escreva em frase.`;
 
+// Marcador de quebra. Precisa ser algo que o modelo não escreveria por conta
+// própria e que seja fácil de separar depois — uma linha com três hifens.
+export const SEPARADOR_DE_MENSAGENS = "---";
+
+// Conversa de WhatsApp é picada: várias mensagens curtas em sequência, não um
+// parágrafo único. Quem quebra é o modelo, porque ele sabe onde uma ideia
+// termina; o código só divide no marcador e envia uma por vez.
+const quebraEmMensagens = (maximo) => `
+Formato de envio (isto é WhatsApp, não e-mail):
+- Escreva em até ${maximo} mensagens curtas, separadas por uma linha contendo apenas ${SEPARADOR_DE_MENSAGENS}
+- Cada mensagem com 1 ou 2 frases, no máximo. A primeira já responde o que foi perguntado; as seguintes complementam.
+- Nem toda resposta precisa de várias mensagens: se uma frase resolve, mande uma só, sem o marcador.
+- Nunca comece uma mensagem com "além disso", "também" ou "complementando".
+
+Exemplo de resposta em três mensagens:
+Creatina aumenta força e desempenho em treino pesado.
+${SEPARADOR_DE_MENSAGENS}
+A dose usual é 3 a 5 g por dia, todo dia, no horário que preferir.
+${SEPARADOR_DE_MENSAGENS}
+Quer que eu fale dos efeitos colaterais?`;
+
 const SUPLEMENTOS = `Você é o assistente de WhatsApp de um serviço sobre suplementos e alimentação.
 ${FORMATACAO}
 
@@ -45,7 +66,13 @@ const PERFIS = {
   puro: null,
 };
 
-export function montarPromptDeSistema({ nome, perfil, textoCustomizado, limitePalavras }) {
+export function montarPromptDeSistema({
+  nome,
+  perfil,
+  textoCustomizado,
+  limitePalavras,
+  maxMensagens,
+}) {
   if (textoCustomizado) return textoCustomizado;
 
   const base = PERFIS[perfil];
@@ -58,7 +85,8 @@ export function montarPromptDeSistema({ nome, perfil, textoCustomizado, limitePa
   if (base === null) return null;
 
   const limite = limitePalavras ? brevidade(limitePalavras) : "";
-  return `${base}\n${limite}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
+  const quebra = maxMensagens > 1 ? quebraEmMensagens(maxMensagens) : "";
+  return `${base}\n${limite}\n${quebra}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
 }
 
 export const perfisDisponiveis = Object.keys(PERFIS);

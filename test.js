@@ -106,7 +106,8 @@ test("responde uma mensagem normal e guarda o histórico", async () => {
   assert.equal(r.tratada, true);
   assert.equal(enviadas.length, 1);
   assert.equal(enviadas[0].telefone, "5519999999999");
-  assert.ok(enviadas[0].digitandoMs >= 1000);
+  // Ritmo do "digitando...": entre o mínimo e o teto de 3s.
+  assert.ok(enviadas[0].digitandoMs >= 800 && enviadas[0].digitandoMs <= 3000);
 
   const historico = await bot.conversas.historico("5519999999999");
   assert.deepEqual(historico.map((m) => m.role), ["user", "assistant"]);
@@ -454,4 +455,54 @@ test("limite de palavras entra no prompt e some no perfil puro", () => {
 
   // Puro continua puro: nem tamanho é imposto.
   assert.equal(montarPromptDeSistema({ nome: "Kelwin", perfil: "puro", limitePalavras: 60 }), null);
+});
+
+// --- Resposta picada em várias mensagens -----------------------------------
+
+test("divide a resposta no marcador e respeita o máximo", () => {
+  const bot = new BotService({ whatsapp: {}, ia: {}, conversas: {} });
+  const resposta = "Primeira.\n---\nSegunda.\n---\nTerceira.";
+
+  assert.deepEqual(bot.dividirResposta(resposta, 3), ["Primeira.", "Segunda.", "Terceira."]);
+
+  // Excedente é juntado na última, não descartado.
+  assert.deepEqual(bot.dividirResposta(resposta, 2), ["Primeira.", "Segunda.\n\nTerceira."]);
+
+  // Sem marcador, uma mensagem só.
+  assert.deepEqual(bot.dividirResposta("Uma frase.", 3), ["Uma frase."]);
+
+  // Marcador com espaços ou hifens extras também vale.
+  assert.deepEqual(bot.dividirResposta("A\n  ----  \nB", 2), ["A", "B"]);
+});
+
+test("envia uma mensagem por parte, em ordem", async () => {
+  const enviadas = [];
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async (p) => { enviadas.push(p.texto); },
+    },
+    ia: { nome: "falsa", responder: async () => "Oi!\n---\nTudo bem?" },
+    conversas: new MemoriaRepo({ maxHistorico: 4 }),
+    prompt: { perfil: "whatsapp", maxMensagens: 3 },
+    logger: { log() {}, error() {} },
+  });
+
+  const r = await bot.processarWebhook(webhook("oi"));
+
+  assert.equal(r.tratada, true);
+  assert.deepEqual(enviadas, ["Oi!", "Tudo bem?"]);
+
+  // No histórico fica a resposta inteira, para o modelo ter o contexto.
+  const historico = await bot.conversas.historico("5519999999999");
+  assert.equal(historico[1].content, "Oi!\n---\nTudo bem?");
+});
+
+test("a instrução de quebra só aparece quando o máximo é maior que 1", () => {
+  const varias = montarPromptDeSistema({ nome: "K", perfil: "whatsapp", limitePalavras: 60, maxMensagens: 3 });
+  assert.match(varias, /até 3 mensagens curtas/);
+
+  const unica = montarPromptDeSistema({ nome: "K", perfil: "whatsapp", limitePalavras: 60, maxMensagens: 1 });
+  assert.doesNotMatch(unica, /mensagens curtas/);
 });

@@ -116,6 +116,17 @@ A URL do túnel muda a cada execução — atualize o webhook no provedor.
 Para um texto próprio sem mexer no código, preencha `SYSTEM_PROMPT`, que tem
 prioridade sobre o perfil. Os perfis ficam em `src/core/prompt.js`.
 
+## Resposta picada
+
+Conversa de WhatsApp é dinâmica, então o bot responde em várias mensagens
+curtas em sequência, com "digitando..." entre elas. Quem decide onde quebrar é
+o modelo — o prompt pede uma linha com `---` entre as partes, e o código
+divide ali. Como na prática ele às vezes separa por linha em branco em vez do
+marcador, os dois formatos são aceitos.
+
+Controle em `RESPOSTA_MAX_MENSAGENS` (1 volta ao comportamento de mensagem
+única). O excedente é juntado na última mensagem, nunca descartado.
+
 ## Trocando de provedor de WhatsApp
 
 No `.env`: `WHATSAPP_PROVIDER=zapi` ou `WHATSAPP_PROVIDER=evolution`.
