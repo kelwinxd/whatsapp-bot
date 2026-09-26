@@ -37,12 +37,29 @@
       .ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--apagado); }
       .ponto.on { background: var(--verde); }
       .ponto.off { background: var(--vermelho); }
-      input, textarea, button {
+      input, textarea, button, select {
         font: inherit; color: var(--texto); background: #11141a;
         border: 1px solid var(--borda); border-radius: 8px; padding: 9px 11px;
       }
-      input, textarea { width: 100%; }
+      input, textarea, select { width: 100%; }
       textarea { resize: vertical; min-height: 64px; }
+      /* appearance: none tira o visual nativo do sistema, que ignora o tema
+         escuro; a seta vem de um SVG embutido, e o padding à direita abre
+         espaço para ela. */
+      select {
+        appearance: none;
+        padding: 12px 36px 12px 12px;
+        cursor: pointer;
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238b93a1' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+      }
+      select:hover { border-color: #39414f; }
+      select:focus { outline: none; border-color: var(--azul); }
+      /* Estes dois só valem no menu aberto, que é desenhado pelo sistema:
+         sem eles, alguns navegadores abrem a lista em branco. */
+      select option { background: #11141a; color: var(--texto); }
+      select optgroup { background: #0f1115; color: var(--apagado); }
       button { cursor: pointer; background: #1e222b; }
       button:hover { border-color: #39414f; }
       button.primario { background: var(--verde); color: #06240f; border-color: transparent; font-weight: 600; }
@@ -67,7 +84,7 @@
       .tarefa .acoes { margin-left: auto; display: flex; gap: 6px; }
       .tarefa .acoes button { font-size: 12px; padding: 6px 9px; }
       .tarefa .grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .tarefa select { width: 100%; }
+      .tarefa input, .tarefa textarea { padding: 12px; }
       .tarefa .horario { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
       .tarefa .horario select:disabled { opacity: .45; }
       .tarefa .quando { color: var(--apagado); font-size: 12px; font-family: ui-monospace, monospace; }
