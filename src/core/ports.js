@@ -147,7 +147,13 @@ export class BaseDeConhecimento {
    *
    * @returns {Promise<Array<{ conteudo: string, documento: string, posicao: number, distancia: number }>>}
    */
-  async buscar(pergunta, k) {
+  /**
+   * @param {string} pergunta
+   * @param {number} [k]
+   * @param {{ documentos?: string[] }} [opcoes] Restringe a quais documentos
+   *   olhar (usado para escopar a busca à loja do perfil ativo).
+   */
+  async buscar(pergunta, k, opcoes) {
     throw new Error(`${this.nome} não implementou buscar()`);
   }
 

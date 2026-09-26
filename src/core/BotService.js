@@ -1,4 +1,5 @@
-import { montarPromptDeSistema, SEPARADOR_DE_MENSAGENS } from "./prompt.js";
+import { montarPromptDeSistema, separarPerfil, SEPARADOR_DE_MENSAGENS } from "./prompt.js";
+import { nomeDoDocumento } from "./lojas.js";
 import { metricasNulas } from "./Metricas.js";
 import { custoDeTexto, custoDeTranscricao, somar } from "./billing.js";
 
@@ -57,8 +58,8 @@ export class BotService {
     ia,
     conversas,
     base = null,
-    // { respostas, resumo } do formulário da loja; o resumo vai no prompt.
-    loja = null,
+    // Repositório de lojas: o perfil "loja_<slug>" diz qual delas atende.
+    lojas = null,
     prompt = { perfil: "suplementos" },
     metricas = metricasNulas,
     ritmo = {},
@@ -72,7 +73,7 @@ export class BotService {
     this.ia = ia;
     this.conversas = conversas;
     this.base = base;
-    this.loja = loja;
+    this.lojas = lojas;
     this.prompt = prompt;
     this.metricas = metricas;
     this.ritmo = { ...RITMO_PADRAO, ...ritmo };
@@ -107,10 +108,26 @@ export class BotService {
     return { texto: retorno?.texto ?? "", uso: retorno?.uso ?? null };
   }
 
-  async buscarNaBase(pergunta) {
+  // Qual loja o perfil ativo atende, e a que documento a busca fica restrita.
+  // Sem loja no perfil, o comportamento é o de antes: prompt sem dados de
+  // loja e busca na base inteira.
+  async lojaAtiva() {
+    const { slug } = separarPerfil(this.prompt.perfil);
+    if (!slug) return { resumo: null, documentos: undefined };
+
+    const loja = this.lojas ? await this.lojas.obter(slug) : null;
+    if (!loja) {
+      this.logger.error(`❌ Perfil "${this.prompt.perfil}": loja "${slug}" não cadastrada`);
+      return { resumo: null, documentos: [nomeDoDocumento(slug)] };
+    }
+
+    return { resumo: loja.resumo, documentos: [loja.documento] };
+  }
+
+  async buscarNaBase(pergunta, documentos) {
     if (!this.base || !pergunta) return [];
     try {
-      return await this.base.buscar(pergunta);
+      return await this.base.buscar(pergunta, undefined, { documentos });
     } catch (erro) {
       this.logger.error("❌ Falha ao consultar a base de conhecimento:", erro);
       return [];
@@ -266,7 +283,7 @@ export class BotService {
           sistema: montarPromptDeSistema({
             nome: "amigo",
             ...this.prompt,
-            loja: this.loja?.resumo ?? null,
+            loja: (await this.lojaAtiva()).resumo,
           }),
           mensagens: [{ role: "user", content: pedido }],
         }),
@@ -344,8 +361,10 @@ export class BotService {
 
       // Consulta a base de conhecimento, quando há uma. Falha na base não
       // derruba a resposta: o bot responde sem os trechos, como antes.
+      const { resumo: resumoDaLoja, documentos } = await this.lojaAtiva();
       const trechos = await this.buscarNaBase(
         typeof paraIA === "string" ? paraIA : (transcricao ?? texto),
+        documentos,
       );
 
       const antesDaIA = Date.now();
@@ -355,7 +374,7 @@ export class BotService {
             nome,
             ...this.prompt,
             trechos,
-            loja: this.loja?.resumo ?? null,
+            loja: resumoDaLoja,
           }),
           mensagens: [
             ...(await this.conversas.historico(telefone)),

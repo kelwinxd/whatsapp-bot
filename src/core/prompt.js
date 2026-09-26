@@ -109,6 +109,16 @@ const blocoDaLoja = (resumo) => `
 Dados da loja (use estes valores, são os oficiais):
 ${resumo}`;
 
+/**
+ * "loja_sara-modas" -> { perfil: "loja", slug: "sara-modas" }. É o que permite
+ * escolher a loja pelo PROMPT_PERFIL, sem um perfil escrito no código por
+ * loja cadastrada.
+ */
+export function separarPerfil(perfil) {
+  const casou = /^loja[_:](.+)$/.exec(String(perfil ?? "").trim());
+  return casou ? { perfil: "loja", slug: casou[1] } : { perfil, slug: null };
+}
+
 export function montarPromptDeSistema({
   nome,
   perfil,
@@ -120,7 +130,8 @@ export function montarPromptDeSistema({
 }) {
   if (textoCustomizado) return textoCustomizado;
 
-  const base = PERFIS[perfil];
+  // Aceita "loja_<slug>" como o perfil "loja" daquela loja.
+  const base = PERFIS[separarPerfil(perfil).perfil];
   if (base === undefined) {
     throw new Error(
       `Perfil de prompt desconhecido: "${perfil}". Opções: ${Object.keys(PERFIS).join(", ")}`,

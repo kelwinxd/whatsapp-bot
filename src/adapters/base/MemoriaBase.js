@@ -101,14 +101,24 @@ export class MemoriaBase extends BaseDeConhecimento {
     return { documento: nome, pedacos: conteudos.length, uso };
   }
 
-  async buscar(pergunta, k = this.k) {
+  /**
+   * @param {string} pergunta
+   * @param {number} k
+   * @param {{ documentos?: string[] }} opcoes  Restringe a busca a esses
+   *   documentos — é assim que o bot de uma loja não vê o material de outra.
+   */
+  async buscar(pergunta, k = this.k, { documentos } = {}) {
     await this.carregar();
-    if (this.pedacos.length === 0) return [];
+
+    const candidatos = documentos
+      ? this.pedacos.filter((p) => documentos.includes(p.documento))
+      : this.pedacos;
+    if (candidatos.length === 0) return [];
 
     const { vetores } = await this.vetorizar([pergunta]);
     const vetorDaPergunta = vetores[0];
 
-    return this.pedacos
+    return candidatos
       .map((p) => ({
         conteudo: p.conteudo,
         documento: p.documento,

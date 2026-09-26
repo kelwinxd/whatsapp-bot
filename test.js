@@ -8,6 +8,8 @@ import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
 import { BotService } from "./src/core/BotService.js";
 import { montarPromptDeSistema, perfisDisponiveis } from "./src/core/prompt.js";
 import { montarDocumento, resumoParaPrompt, contarRespostas } from "./src/core/formularioLoja.js";
+import { Lojas, gerarSlug, nomeDoDocumento } from "./src/core/lojas.js";
+import { separarPerfil } from "./src/core/prompt.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -1222,4 +1224,149 @@ test("perfil loja mantém o comportamento de WhatsApp e recebe os dados da loja"
 
   // O perfil está no catálogo exposto pelo /health.
   assert.ok(perfisDisponiveis.includes("loja"));
+});
+
+
+// --- Várias lojas ----------------------------------------------------------
+
+test("gerarSlug tira acento, espaço e pontuação", () => {
+  assert.equal(gerarSlug("Sara Modas"), "sara-modas");
+  assert.equal(gerarSlug("Empório da Serra"), "emporio-da-serra");
+  assert.equal(gerarSlug("  Açaí & Cia!  "), "acai-cia");
+  assert.equal(gerarSlug(""), "");
+  assert.equal(nomeDoDocumento("sara-modas"), "loja-sara-modas.md");
+});
+
+test("separarPerfil identifica a loja do perfil", () => {
+  assert.deepEqual(separarPerfil("loja_sara-modas"), { perfil: "loja", slug: "sara-modas" });
+  assert.deepEqual(separarPerfil("loja:emporio"), { perfil: "loja", slug: "emporio" });
+  // Perfis comuns passam intactos.
+  assert.deepEqual(separarPerfil("whatsapp"), { perfil: "whatsapp", slug: null });
+  assert.deepEqual(separarPerfil("loja"), { perfil: "loja", slug: null });
+});
+
+const lojasDeTeste = () => {
+  const base = baseDeTeste();
+  const pasta = `${tmpdir()}/lojas-teste-${Date.now()}-${Math.random()}`;
+  return { base, lojas: new Lojas({ pasta, base, logger: { log() {}, error() {} } }) };
+};
+
+test("cada cadastro cria uma loja, um perfil e um documento próprio", async () => {
+  const { base, lojas } = lojasDeTeste();
+
+  const sara = await lojas.salvar({
+    respostas: { nome: "Sara Modas", ramo: "Roupas femininas", horarioSemana: "9h às 17h" },
+  });
+  const serra = await lojas.salvar({
+    respostas: { nome: "Empório da Serra", ramo: "Produtos naturais", horarioSemana: "9h às 18h30" },
+  });
+
+  // O slug (e o perfil) sai do nome.
+  assert.equal(sara.slug, "sara-modas");
+  assert.equal(sara.perfil, "loja_sara-modas");
+  assert.equal(serra.perfil, "loja_emporio-da-serra");
+
+  // Um documento por loja, nenhum sobrescrevendo o outro.
+  const documentos = (await base.documentos()).map((d) => d.nome).sort();
+  assert.deepEqual(documentos, ["loja-emporio-da-serra.md", "loja-sara-modas.md"]);
+
+  const listadas = await lojas.listar();
+  assert.deepEqual(listadas.map((l) => l.perfil), ["loja_emporio-da-serra", "loja_sara-modas"]);
+  assert.equal(listadas[1].progresso.respondidos, 3);
+
+  const obtida = await lojas.obter("sara-modas");
+  assert.match(obtida.resumo, /- Nome: Sara Modas/);
+  assert.equal(obtida.documento, "loja-sara-modas.md");
+  assert.equal(await lojas.obter("nao-existe"), null);
+
+  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(base.arquivo, { force: true });
+});
+
+test("salvar de novo atualiza a loja em vez de duplicar", async () => {
+  const { base, lojas } = lojasDeTeste();
+
+  await lojas.salvar({ respostas: { nome: "Sara Modas", horarioSemana: "9h às 17h" } });
+  await lojas.salvar({ slug: "sara-modas", respostas: { nome: "Sara Modas", horarioSemana: "10h às 19h" } });
+
+  assert.equal((await lojas.listar()).length, 1);
+  assert.match((await lojas.obter("sara-modas")).resumo, /10h às 19h/);
+  assert.equal((await base.documentos()).length, 1);
+
+  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(base.arquivo, { force: true });
+});
+
+test("remover apaga as respostas e o documento da base", async () => {
+  const { base, lojas } = lojasDeTeste();
+  await lojas.salvar({ respostas: { nome: "Sara Modas", ramo: "Roupas" } });
+
+  const resultado = await lojas.remover("sara-modas");
+  assert.equal(resultado.removida, true);
+  assert.ok(resultado.pedacos > 0);
+
+  // Documento fora da base: senão o bot responderia por uma loja que não existe.
+  assert.deepEqual(await base.documentos(), []);
+  assert.deepEqual(await lojas.listar(), []);
+  assert.deepEqual(await lojas.remover("sara-modas"), { removida: false });
+
+  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(base.arquivo, { force: true });
+});
+
+test("a busca fica restrita ao documento da loja", async () => {
+  const { base, lojas } = lojasDeTeste();
+  await lojas.salvar({ respostas: { nome: "Uma", condicoesTroca: "creatina creatina creatina" } });
+  await lojas.salvar({ respostas: { nome: "Outra", condicoesTroca: "creatina creatina creatina" } });
+
+  // Sem filtro, a busca vê as duas lojas — é justamente o vazamento a evitar.
+  const semFiltro = await base.buscar("creatina", 10);
+  assert.ok(new Set(semFiltro.map((t) => t.documento)).size > 1);
+
+  const soDeUma = await base.buscar("creatina", 10, { documentos: ["loja-uma.md"] });
+  assert.ok(soDeUma.length > 0);
+  assert.ok(soDeUma.every((t) => t.documento === "loja-uma.md"));
+
+  // Documento inexistente não vaza resultado de outro.
+  assert.deepEqual(await base.buscar("creatina", 5, { documentos: ["loja-fantasma.md"] }), []);
+
+  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(base.arquivo, { force: true });
+});
+
+test("o BotService resolve a loja do perfil ativo", async () => {
+  const { base, lojas } = lojasDeTeste();
+  await lojas.salvar({ respostas: { nome: "Sara Modas", horarioSemana: "9h às 17h" } });
+
+  const erros = [];
+  const montar = (perfil) =>
+    new BotService({
+      whatsapp: { nome: "falso", enviarTexto: async () => {} },
+      ia: { nome: "falsa", responder: async () => "ok" },
+      conversas: new MemoriaRepo({ maxHistorico: 4 }),
+      base,
+      lojas,
+      prompt: { perfil },
+      dormir: async () => {},
+      logger: { log() {}, error: (m) => erros.push(m) },
+    });
+
+  const daSara = await montar("loja_sara-modas").lojaAtiva();
+  assert.match(daSara.resumo, /- Nome: Sara Modas/);
+  assert.deepEqual(daSara.documentos, ["loja-sara-modas.md"]);
+
+  // Perfil sem loja: nada de dados de loja, e busca na base inteira.
+  const semLoja = await montar("whatsapp").lojaAtiva();
+  assert.equal(semLoja.resumo, null);
+  assert.equal(semLoja.documentos, undefined);
+
+  // Perfil apontando para loja que não existe: avisa no log e não vaza outra
+  // loja no escopo da busca.
+  const fantasma = await montar("loja_nao-cadastrada").lojaAtiva();
+  assert.equal(fantasma.resumo, null);
+  assert.deepEqual(fantasma.documentos, ["loja-nao-cadastrada.md"]);
+  assert.match(erros.join(" "), /não cadastrada/);
+
+  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(base.arquivo, { force: true });
 });
