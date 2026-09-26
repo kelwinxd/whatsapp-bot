@@ -10,6 +10,8 @@ import { montarPromptDeSistema } from "./src/core/prompt.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
+import { quebrarEmPedacos } from "./src/core/chunker.js";
+import { MemoriaBase, BaseNula } from "./src/adapters/base/MemoriaBase.js";
 import { resolverHorario, descreverHorario, decomporHorario, vocabulario } from "./src/core/horarios.js";
 
 // Rode com: npm test
@@ -976,4 +978,164 @@ test("o custo real da chamada entra nas métricas", async () => {
   const r = await semUso.processarWebhook(webhook("oi"));
   assert.equal(r.tratada, true);
   assert.equal(semUso.metricas.resumo().custoTotalUsd, null);
+});
+
+// --- RAG: chunker, base em memória e integração ----------------------------
+
+test("chunker quebra em parágrafo, com sobreposição", () => {
+  const paragrafo = (n) => `Parágrafo ${n}. `.repeat(20).trim(); // ~280 chars
+
+  const texto = [paragrafo(1), paragrafo(2), paragrafo(3), paragrafo(4)].join("\n\n");
+  const pedacos = quebrarEmPedacos(texto, { tamanho: 600, sobreposicao: 100 });
+
+  assert.ok(pedacos.length >= 2);
+  // Nenhum pedaço estoura o tamanho pedido (com folga da sobreposição).
+  for (const p of pedacos) assert.ok(p.length <= 700, `pedaço com ${p.length}`);
+  // Todo o conteúdo continua presente em algum pedaço.
+  assert.ok(pedacos.join(" ").includes("Parágrafo 4"));
+
+  // Texto vazio não gera pedaço nenhum.
+  assert.deepEqual(quebrarEmPedacos("   "), []);
+
+  // Parágrafo único e gigante é dividido por frase, não descartado.
+  const gigante = "Frase curta. ".repeat(200);
+  const divididos = quebrarEmPedacos(gigante, { tamanho: 500, sobreposicao: 0 });
+  assert.ok(divididos.length > 1);
+  for (const p of divididos) assert.ok(p.length <= 500);
+});
+
+// Embeddings determinísticos: vetor de 3 dimensões contando palavras-chave.
+// Permite testar ordenação e limiar sem chamar a OpenAI.
+const vetorizarFalso = async (textos) => ({
+  vetores: textos.map((t) => {
+    const minusculo = t.toLowerCase();
+    return [
+      (minusculo.match(/creatina/g) ?? []).length + 0.01,
+      (minusculo.match(/água|agua/g) ?? []).length + 0.01,
+      (minusculo.match(/treino/g) ?? []).length + 0.01,
+    ];
+  }),
+  uso: { modelo: "falso", tokens: textos.join(" ").length },
+});
+
+const baseDeTeste = () =>
+  new MemoriaBase({
+    vetorizar: vetorizarFalso,
+    arquivo: `${tmpdir()}/base-teste-${Date.now()}-${Math.random()}.json`,
+    limiar: 0.6,
+    k: 3,
+    // Pedaço pequeno para o texto curto do teste render mais de um.
+    pedaco: { tamanho: 45, sobreposicao: 0 },
+  });
+
+test("MemoriaBase indexa, busca por proximidade e persiste", async () => {
+  const base = baseDeTeste();
+
+  const { pedacos } = await base.indexar({
+    nome: "suplementos.txt",
+    texto: "Creatina aumenta força no treino.\n\nÁgua deve ser bebida ao longo do dia.",
+  });
+  assert.equal(pedacos, 2);
+
+  const sobreCreatina = await base.buscar("quanto de creatina tomar?");
+  assert.equal(sobreCreatina[0].documento, "suplementos.txt");
+  assert.match(sobreCreatina[0].conteudo, /Creatina/);
+
+  const sobreAgua = await base.buscar("preciso beber mais água");
+  assert.match(sobreAgua[0].conteudo, /Água/);
+
+  // Sobrevive a recarregar do arquivo.
+  const outra = new MemoriaBase({ vetorizar: vetorizarFalso, arquivo: base.arquivo, limiar: 0.6 });
+  assert.equal((await outra.documentos())[0].pedacos, 2);
+
+  await rm(base.arquivo, { force: true });
+});
+
+test("o limiar corta trecho irrelevante", async () => {
+  const base = baseDeTeste();
+  await base.indexar({ nome: "doc.txt", texto: "Creatina creatina creatina." });
+
+  // Pergunta do mesmo assunto passa...
+  assert.equal((await base.buscar("creatina")).length, 1);
+  // ...e pergunta sobre outra coisa é cortada, em vez de trazer o trecho mais
+  // próximo de qualquer jeito.
+  assert.equal((await base.buscar("água")).length, 0);
+});
+
+test("reindexar substitui o documento e remover apaga", async () => {
+  const base = baseDeTeste();
+
+  await base.indexar({ nome: "doc.txt", texto: "Creatina.\n\nTreino.\n\nÁgua." });
+  await base.indexar({ nome: "doc.txt", texto: "Só creatina agora." });
+  assert.equal((await base.documentos())[0].pedacos, 1);
+
+  assert.equal(await base.remover("doc.txt"), 1);
+  assert.deepEqual(await base.documentos(), []);
+  assert.deepEqual(await base.buscar("creatina"), []);
+
+  await rm(base.arquivo, { force: true });
+});
+
+test("BaseNula não quebra o fluxo e recusa indexação", async () => {
+  const nula = new BaseNula();
+  assert.deepEqual(await nula.buscar("qualquer coisa"), []);
+  assert.deepEqual(await nula.documentos(), []);
+  await assert.rejects(() => nula.indexar({ nome: "x", texto: "y" }), /RAG desligado/);
+});
+
+test("os trechos entram no prompt com regra de citação", () => {
+  const prompt = montarPromptDeSistema({
+    nome: "Kelwin",
+    perfil: "whatsapp",
+    limitePalavras: 60,
+    trechos: [
+      { conteudo: "Creatina: 3 a 5 g por dia.", documento: "manual.txt", posicao: 0, distancia: 0.1 },
+    ],
+  });
+
+  assert.match(prompt, /\[1\] \(manual\.txt, parte 1\) Creatina/);
+  assert.match(prompt, /cite o número entre colchetes/);
+  assert.match(prompt, /não encontrou no material/);
+
+  // Sem trechos, nada disso aparece.
+  const semTrechos = montarPromptDeSistema({ nome: "Kelwin", perfil: "whatsapp", limitePalavras: 60 });
+  assert.doesNotMatch(semTrechos, /base de conhecimento/);
+});
+
+test("o BotService consulta a base e sobrevive a falha dela", async () => {
+  const perguntasBuscadas = [];
+  const montar = (base) =>
+    new BotService({
+      whatsapp: {
+        nome: "falso",
+        interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+        enviarTexto: async () => {},
+      },
+      ia: { nome: "falsa", responder: async (p) => ({ texto: "ok", uso: null, sistema: p.sistema }) },
+      conversas: new MemoriaRepo({ maxHistorico: 4 }),
+      base,
+      metricas: new Metricas(),
+      dormir: async () => {},
+      logger: { log() {}, error() {} },
+    });
+
+  const comBase = montar({
+    nome: "falsa",
+    buscar: async (pergunta) => {
+      perguntasBuscadas.push(pergunta);
+      return [{ conteudo: "trecho", documento: "d.txt", posicao: 0, distancia: 0.2 }];
+    },
+  });
+  await comBase.processarWebhook(webhook("quanto de creatina?"));
+  assert.deepEqual(perguntasBuscadas, ["quanto de creatina?"]);
+  assert.equal(comBase.metricas.eventos[0].trechos, 1);
+
+  // Base quebrada: responde sem os trechos em vez de falhar a mensagem.
+  const comBaseQuebrada = montar({
+    nome: "quebrada",
+    buscar: async () => { throw new Error("banco fora do ar"); },
+  });
+  const r = await comBaseQuebrada.processarWebhook(webhook("oi"));
+  assert.equal(r.tratada, true);
+  assert.equal(comBaseQuebrada.metricas.eventos[0].trechos, 0);
 });
