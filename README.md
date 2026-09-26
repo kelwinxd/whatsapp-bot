@@ -79,6 +79,11 @@ npm test
 
 `GET /health` mostra quais provedores estão ativos.
 
+## Planos
+
+- [docs/RAG.md](docs/RAG.md) — plano para o bot responder com base em documentos
+  seus (PDF, txt), com porta, adaptadores, ingestão, custos e fases.
+
 ## Custos
 
 Preço de cada operação e o custo médio por resposta estão em
