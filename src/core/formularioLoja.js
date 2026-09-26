@@ -65,6 +65,8 @@ export const PERGUNTAS = [
   {
     secao: "Atendimento",
     campos: [
+      { id: "nomeAtendente", rotulo: "Como o bot deve se chamar?", tipo: "texto", exemplo: "Sarinha, atendente virtual da Sara Modas" },
+      { id: "saudacao", rotulo: "Como ele se apresenta na primeira mensagem?", tipo: "longo", exemplo: "Oi! Aqui é a Sarinha, da Sara Modas 💜 Como posso te ajudar?" },
       { id: "tomAtendimento", rotulo: "Como o bot deve falar?", tipo: "texto", exemplo: "Informal, tratando por você, com emoji ocasional" },
       { id: "quandoChamarHumano", rotulo: "Quando ele deve chamar uma pessoa?", tipo: "longo", exemplo: "Reclamação, pedido com problema, orçamento acima de R$ 500 ou pedido de desconto" },
       { id: "contatoHumano", rotulo: "Como avisar que uma pessoa vai atender?", tipo: "texto", exemplo: "Vou chamar alguém da equipe, responde aqui em alguns minutos" },
@@ -76,6 +78,7 @@ export const PERGUNTAS = [
 // Campos que precisam sair exatos e por isso vão no prompt, não no RAG.
 const CAMPOS_ESTRUTURADOS = [
   ["nome", "Nome"],
+  ["nomeAtendente", "Quem atende"],
   ["ramo", "Ramo"],
   ["endereco", "Endereço"],
   ["referencia", "Referência"],
@@ -137,6 +140,18 @@ export function montarDocumento(respostas = {}) {
   }
 
   return partes.join("\n\n");
+}
+
+/**
+ * Como a loja quer ser apresentada na primeira mensagem. Fica fora do resumo
+ * porque não é um valor a informar, é instrução de comportamento.
+ */
+export function apresentacaoDaLoja(respostas = {}) {
+  const nome = preenchido(respostas.nome);
+  const atendente = preenchido(respostas.nomeAtendente);
+  const saudacao = preenchido(respostas.saudacao);
+  if (!nome && !atendente && !saudacao) return null;
+  return { loja: nome || null, atendente: atendente || null, saudacao: saudacao || null };
 }
 
 /** Quantos campos foram respondidos, para o painel mostrar o progresso. */

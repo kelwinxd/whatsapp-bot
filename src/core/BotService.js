@@ -1,5 +1,6 @@
 import { montarPromptDeSistema, separarPerfil, SEPARADOR_DE_MENSAGENS } from "./prompt.js";
 import { nomeDoDocumento } from "./lojas.js";
+import { apresentacaoDaLoja } from "./formularioLoja.js";
 import { metricasNulas } from "./Metricas.js";
 import { custoDeTexto, custoDeTranscricao, somar } from "./billing.js";
 
@@ -113,15 +114,19 @@ export class BotService {
   // loja e busca na base inteira.
   async lojaAtiva() {
     const { slug } = separarPerfil(this.prompt.perfil);
-    if (!slug) return { resumo: null, documentos: undefined };
+    if (!slug) return { resumo: null, documentos: undefined, apresentacao: null };
 
     const loja = this.lojas ? await this.lojas.obter(slug) : null;
     if (!loja) {
       this.logger.error(`❌ Perfil "${this.prompt.perfil}": loja "${slug}" não cadastrada`);
-      return { resumo: null, documentos: [nomeDoDocumento(slug)] };
+      return { resumo: null, documentos: [nomeDoDocumento(slug)], apresentacao: null };
     }
 
-    return { resumo: loja.resumo, documentos: [loja.documento] };
+    return {
+      resumo: loja.resumo,
+      documentos: [loja.documento],
+      apresentacao: apresentacaoDaLoja(loja.respostas),
+    };
   }
 
   async buscarNaBase(pergunta, documentos) {
@@ -361,7 +366,12 @@ export class BotService {
 
       // Consulta a base de conhecimento, quando há uma. Falha na base não
       // derruba a resposta: o bot responde sem os trechos, como antes.
-      const { resumo: resumoDaLoja, documentos } = await this.lojaAtiva();
+      const { resumo: resumoDaLoja, documentos, apresentacao } = await this.lojaAtiva();
+
+      // Histórico vazio = primeira mensagem desta conversa. É o gancho para o
+      // bot se apresentar uma vez, e só uma.
+      const historico = await this.conversas.historico(telefone);
+      const primeiraMensagem = historico.length === 0;
       const trechos = await this.buscarNaBase(
         typeof paraIA === "string" ? paraIA : (transcricao ?? texto),
         documentos,
@@ -375,11 +385,9 @@ export class BotService {
             ...this.prompt,
             trechos,
             loja: resumoDaLoja,
+            apresentar: primeiraMensagem ? apresentacao : null,
           }),
-          mensagens: [
-            ...(await this.conversas.historico(telefone)),
-            { role: "user", content: paraIA },
-          ],
+          mensagens: [...historico, { role: "user", content: paraIA }],
         }),
       );
       const iaMs = Date.now() - antesDaIA;
@@ -406,6 +414,7 @@ export class BotService {
         envioMs: Date.now() - antesDoEnvio,
         totalMs: Date.now() - inicio,
         trechos: trechos.length,
+        abertura: primeiraMensagem,
         custoUsd,
       });
 

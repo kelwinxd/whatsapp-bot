@@ -7,7 +7,7 @@ import { EvolutionAdapter } from "./src/adapters/whatsapp/EvolutionAdapter.js";
 import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
 import { BotService } from "./src/core/BotService.js";
 import { montarPromptDeSistema, perfisDisponiveis } from "./src/core/prompt.js";
-import { montarDocumento, resumoParaPrompt, contarRespostas } from "./src/core/formularioLoja.js";
+import { montarDocumento, resumoParaPrompt, contarRespostas, apresentacaoDaLoja } from "./src/core/formularioLoja.js";
 import { Lojas, gerarSlug, nomeDoDocumento } from "./src/core/lojas.js";
 import { separarPerfil } from "./src/core/prompt.js";
 import { Metricas } from "./src/core/Metricas.js";
@@ -1366,6 +1366,76 @@ test("o BotService resolve a loja do perfil ativo", async () => {
   assert.equal(fantasma.resumo, null);
   assert.deepEqual(fantasma.documentos, ["loja-nao-cadastrada.md"]);
   assert.match(erros.join(" "), /não cadastrada/);
+
+  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(base.arquivo, { force: true });
+});
+
+// --- Apresentação na primeira mensagem -------------------------------------
+
+test("apresentacaoDaLoja junta nome, atendente e saudação", () => {
+  assert.deepEqual(
+    apresentacaoDaLoja({ nome: "Sara Modas", nomeAtendente: "Sarinha", saudacao: "Oi! Sou a Sarinha 💜" }),
+    { loja: "Sara Modas", atendente: "Sarinha", saudacao: "Oi! Sou a Sarinha 💜" },
+  );
+
+  // Só o nome da loja já basta para se apresentar.
+  assert.deepEqual(apresentacaoDaLoja({ nome: "Sara Modas" }), {
+    loja: "Sara Modas",
+    atendente: null,
+    saudacao: null,
+  });
+
+  assert.equal(apresentacaoDaLoja({}), null);
+});
+
+test("o bloco de apresentação só entra quando pedido", () => {
+  const comum = { nome: "Kelwin", perfil: "loja", limitePalavras: 60 };
+
+  const primeira = montarPromptDeSistema({
+    ...comum,
+    apresentar: { loja: "Sara Modas", atendente: "Sarinha", saudacao: "Oi! Sou a Sarinha 💜" },
+  });
+  assert.match(primeira, /PRIMEIRA mensagem desta conversa/);
+  assert.match(primeira, /como Sarinha da Sara Modas/);
+  assert.match(primeira, /Oi! Sou a Sarinha 💜/);
+  assert.match(primeira, /Não se apresente de novo/);
+
+  // Mensagem seguinte: nada de apresentação.
+  assert.doesNotMatch(montarPromptDeSistema(comum), /PRIMEIRA mensagem/);
+});
+
+test("o bot se apresenta uma vez por conversa, e por contato", async () => {
+  const { base, lojas } = lojasDeTeste();
+  await lojas.salvar({
+    respostas: { nome: "Sara Modas", nomeAtendente: "Sarinha", saudacao: "Oi! Sou a Sarinha 💜" },
+  });
+
+  const prompts = [];
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async () => {},
+    },
+    ia: { nome: "falsa", responder: async (p) => { prompts.push(p.sistema); return "ok"; } },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    base,
+    lojas,
+    prompt: { perfil: "loja_sara-modas", limitePalavras: 60 },
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.processarWebhook(webhook("oi"));
+  await bot.processarWebhook(webhook("vocês entregam?"));
+
+  assert.match(prompts[0], /PRIMEIRA mensagem desta conversa/);
+  assert.doesNotMatch(prompts[1], /PRIMEIRA mensagem/);
+
+  // Outro contato começa a própria conversa, então se apresenta de novo.
+  await bot.processarWebhook({ ...webhook("bom dia"), phone: "5511988887777" });
+  assert.match(prompts[2], /PRIMEIRA mensagem desta conversa/);
 
   await rm(lojas.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });

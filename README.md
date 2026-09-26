@@ -110,6 +110,12 @@ resposta picada) e acrescenta as regras de atendimento — não inventar preço
 nem prazo, não prometer desconto fora da tabela, e encaminhar para uma pessoa
 em reclamação, problema de pedido ou dúvida de saúde.
 
+**Na primeira mensagem de cada conversa o bot se apresenta.** Os campos "Como
+o bot deve se chamar?" e "Como ele se apresenta na primeira mensagem?" viram
+uma instrução que entra só quando o histórico daquele contato está vazio — a
+apresentação acontece uma vez por conversa, e de novo para cada contato novo.
+Sem saudação escrita, ele se apresenta com o nome da loja.
+
 **A busca fica restrita ao documento daquela loja.** Sem isso, o bot de uma
 responderia com a política de troca de outra — o que aconteceu de verdade
 quando duas conviveram na base.

@@ -114,6 +114,21 @@ ${resumo}`;
  * escolher a loja pelo PROMPT_PERFIL, sem um perfil escrito no código por
  * loja cadastrada.
  */
+// Só entra na primeira mensagem de uma conversa. Sem isso o bot responde
+// "Oi, Kelwin! Tudo bem?" sem dizer de onde está falando — quem escreveu não
+// sabe se caiu na loja certa.
+const blocoDeApresentacao = ({ loja, atendente, saudacao }) => {
+  const quem = [atendente, loja && `da ${loja}`].filter(Boolean).join(" ");
+  return `
+Esta é a PRIMEIRA mensagem desta conversa:
+- Comece se apresentando${quem ? ` como ${quem}` : ""}, em uma frase.${
+    saudacao ? `
+- Use esta apresentação como base, adaptando ao que a pessoa escreveu: "${saudacao}"` : ""
+  }
+- Depois da apresentação, responda o que foi perguntado. Se a pessoa só cumprimentou, pergunte como pode ajudar.
+- Não se apresente de novo nas mensagens seguintes.`;
+};
+
 export function separarPerfil(perfil) {
   const casou = /^loja[_:](.+)$/.exec(String(perfil ?? "").trim());
   return casou ? { perfil: "loja", slug: casou[1] } : { perfil, slug: null };
@@ -127,6 +142,7 @@ export function montarPromptDeSistema({
   maxMensagens,
   trechos = [],
   loja = null,
+  apresentar = null,
 }) {
   if (textoCustomizado) return textoCustomizado;
 
@@ -146,7 +162,8 @@ export function montarPromptDeSistema({
   // Os dados exatos vêm antes dos trechos de propósito: em caso de conflito, o
   // que está no cadastro da loja é o que vale.
   const dadosDaLoja = loja ? blocoDaLoja(loja) : "";
-  return `${base}\n${limite}\n${quebra}\n${dadosDaLoja}\n${contexto}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
+  const abertura = apresentar ? blocoDeApresentacao(apresentar) : "";
+  return `${base}\n${limite}\n${quebra}\n${dadosDaLoja}\n${abertura}\n${contexto}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
 }
 
 export const perfisDisponiveis = Object.keys(PERFIS);
