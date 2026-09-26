@@ -12,14 +12,14 @@ console.log("🔧 Iniciando...");
 
 const dependencias = montarDependencias(config);
 const metricas = new Metricas();
-const bot = new BotService({ ...dependencias, prompt: config.prompt, metricas, ritmo: config.ritmo, imagem: config.imagem });
+const bot = new BotService({ ...dependencias, prompt: config.prompt, metricas, ritmo: config.ritmo, imagem: config.imagem, base: dependencias.base });
 const agenda = new Agenda({
   tarefas: config.agenda.tarefas,
   fusoHorario: config.agenda.fusoHorario,
   bot,
   metricas,
 });
-const app = criarServidor({ bot, metricas, agenda, config });
+const app = criarServidor({ bot, metricas, agenda, base: dependencias.base, config });
 
 const server = app.listen(config.porta, () => {
   // O Node chama este callback mesmo quando a porta está ocupada (com
@@ -33,6 +33,7 @@ const server = app.listen(config.porta, () => {
   console.log(`📱 WhatsApp: ${dependencias.whatsapp.nome} | 🧠 IA: ${dependencias.ia.nome}`);
   console.log(`💬 Prompt: ${config.prompt.textoCustomizado ? "customizado" : config.prompt.perfil}`);
   console.log(`🖼️  Detalhe de imagem: ${config.imagem.detalhe}`);
+  console.log(`📚 Base de conhecimento: ${dependencias.base.nome}`);
   console.log(`🖥️  Painel em http://localhost:${config.porta}/painel`);
   const quantas = agenda.iniciar();
   if (quantas > 0) console.log(`⏰ ${quantas} tarefa(s) na agenda`);

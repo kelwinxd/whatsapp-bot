@@ -73,12 +73,27 @@ const PERFIS = {
   puro: null,
 };
 
+// Bloco dos trechos recuperados da base. As regras importam tanto quanto os
+// trechos: sem elas o modelo mistura o documento com o que já sabia, e ninguém
+// consegue saber de onde veio a resposta.
+const blocoDeTrechos = (trechos) => `
+Trechos da base de conhecimento (use-os quando a pergunta for sobre eles):
+${trechos
+  .map((t, i) => `[${i + 1}] (${t.documento}, parte ${t.posicao + 1}) ${t.conteudo}`)
+  .join("\n\n")}
+
+Regras sobre esses trechos:
+- Se a resposta está aí, use só o que está escrito e cite o número entre colchetes, ex.: [1].
+- Se não está, diga que não encontrou no material e ofereça ajudar com o que você sabe — sem inventar que estava no documento.
+- Não misture o conteúdo dos trechos com conhecimento próprio sem deixar claro o que é o quê.`;
+
 export function montarPromptDeSistema({
   nome,
   perfil,
   textoCustomizado,
   limitePalavras,
   maxMensagens,
+  trechos = [],
 }) {
   if (textoCustomizado) return textoCustomizado;
 
@@ -93,7 +108,8 @@ export function montarPromptDeSistema({
 
   const limite = limitePalavras ? brevidade(limitePalavras) : "";
   const quebra = maxMensagens > 1 ? quebraEmMensagens(maxMensagens) : "";
-  return `${base}\n${limite}\n${quebra}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
+  const contexto = trechos.length > 0 ? blocoDeTrechos(trechos) : "";
+  return `${base}\n${limite}\n${quebra}\n${contexto}\n\nO nome da pessoa no WhatsApp é ${nome}.`;
 }
 
 export const perfisDisponiveis = Object.keys(PERFIS);

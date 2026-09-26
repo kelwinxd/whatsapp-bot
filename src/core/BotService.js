@@ -56,6 +56,7 @@ export class BotService {
     whatsapp,
     ia,
     conversas,
+    base = null,
     prompt = { perfil: "suplementos" },
     metricas = metricasNulas,
     ritmo = {},
@@ -68,6 +69,7 @@ export class BotService {
     this.whatsapp = whatsapp;
     this.ia = ia;
     this.conversas = conversas;
+    this.base = base;
     this.prompt = prompt;
     this.metricas = metricas;
     this.ritmo = { ...RITMO_PADRAO, ...ritmo };
@@ -100,6 +102,16 @@ export class BotService {
   normalizarDaIA(retorno) {
     if (typeof retorno === "string") return { texto: retorno, uso: null };
     return { texto: retorno?.texto ?? "", uso: retorno?.uso ?? null };
+  }
+
+  async buscarNaBase(pergunta) {
+    if (!this.base || !pergunta) return [];
+    try {
+      return await this.base.buscar(pergunta);
+    } catch (erro) {
+      this.logger.error("❌ Falha ao consultar a base de conhecimento:", erro);
+      return [];
+    }
   }
 
   custoDeUso(uso, tipo) {
@@ -323,10 +335,16 @@ export class BotService {
         return { tratada: false, motivo: "áudio sem fala" };
       }
 
+      // Consulta a base de conhecimento, quando há uma. Falha na base não
+      // derruba a resposta: o bot responde sem os trechos, como antes.
+      const trechos = await this.buscarNaBase(
+        typeof paraIA === "string" ? paraIA : (transcricao ?? texto),
+      );
+
       const antesDaIA = Date.now();
       const { texto: resposta, uso } = this.normalizarDaIA(
         await this.ia.responder({
-          sistema: montarPromptDeSistema({ nome, ...this.prompt }),
+          sistema: montarPromptDeSistema({ nome, ...this.prompt, trechos }),
           mensagens: [
             ...(await this.conversas.historico(telefone)),
             { role: "user", content: paraIA },
@@ -356,6 +374,7 @@ export class BotService {
         iaMs,
         envioMs: Date.now() - antesDoEnvio,
         totalMs: Date.now() - inicio,
+        trechos: trechos.length,
         custoUsd,
       });
 

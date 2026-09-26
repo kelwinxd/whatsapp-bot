@@ -8,7 +8,7 @@ import { vocabulario } from "./core/horarios.js";
 
 const PASTA_PUBLICA = fileURLToPath(new URL("../public", import.meta.url));
 
-export function criarServidor({ bot, metricas, agenda, config = {}, logger = console }) {
+export function criarServidor({ bot, metricas, agenda, base, config = {}, logger = console }) {
   const app = express();
   app.use(express.json({ limit: "10mb" }));
 
@@ -92,6 +92,35 @@ export function criarServidor({ bot, metricas, agenda, config = {}, logger = con
     } catch (erro) {
       logger.error("❌ Erro ao executar tarefa:", erro);
       res.status(400).json({ erro: erro.message });
+    }
+  });
+
+  // --- Base de conhecimento (RAG) ---
+  app.get("/api/base", async (_req, res) => {
+    if (!base) return res.json({ provedor: "nenhum", documentos: [] });
+    res.json({ provedor: base.nome, documentos: await base.documentos() });
+  });
+
+  // Testa a busca sem gastar uma resposta: mostra os trechos e a distância de
+  // cada um, que é o jeito de calibrar o limiar sem adivinhar.
+  app.post("/api/base/buscar", async (req, res) => {
+    const pergunta = String(req.body?.pergunta ?? "").trim();
+    if (!pergunta) return res.status(400).json({ erro: "informe a pergunta" });
+
+    try {
+      res.json({ trechos: await base.buscar(pergunta) });
+    } catch (erro) {
+      logger.error("❌ Erro ao buscar na base:", erro);
+      res.status(502).json({ erro: erro.message });
+    }
+  });
+
+  app.delete("/api/base/:nome", async (req, res) => {
+    try {
+      const removidos = await base.remover(req.params.nome);
+      res.json({ removidos });
+    } catch (erro) {
+      res.status(502).json({ erro: erro.message });
     }
   });
 
