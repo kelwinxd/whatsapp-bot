@@ -138,18 +138,126 @@ refatoração de verdade, não ajuste.
 qual loja é a mensagem (pela instância ou pelo número que recebeu) e carregar a
 configuração daquela loja antes de responder.
 
-## O risco que muda de natureza
+## O canal: de quem é o número e como conecta
 
 **WhatsApp deixa de ser detalhe técnico e vira risco de negócio.** Vender para
 lojas rodando em Evolution/Baileys significa que o número do cliente pode ser
 banido — e a culpa será sua, com o cliente perdendo o canal de vendas.
 
-Para produto: **Cloud API oficial**, template aprovado, opt-in. Possivelmente
-virando Tech Provider da Meta para provisionar números dos clientes. Custa por
-conversa e dá mais trabalho, mas é o que sustenta um contrato.
+### De quem é o número
 
-O `EvolutionAdapter` já serviria: a Evolution fala com a Cloud API também
-(`integration: "WHATSAPP-BUSINESS"`).
+**Da loja, sempre.** O cliente final já conhece aquele número, ele está na
+fachada e no Instagram, e o relacionamento é ativo da loja. Número seu deixa a
+loja dependente de você e, se ela sair, os clientes dela continuam escrevendo
+para você.
+
+Na prática, **chip novo dedicado ao atendimento** resolve quase todo o atrito:
+o dono não perde o WhatsApp dele, o pior cenário (ban) atinge um chip de R$ 20
+em vez do número principal do negócio, e o número novo vai para o site e o
+Instagram como "atendimento".
+
+### As três trilhas
+
+| | Evolution (hoje) | Via BSP | Oficial por conta própria |
+| --- | --- | --- | --- |
+| Precisa do **seu** Business Manager | não | **não** | sim, verificado |
+| Precisa do BM do cliente | não | sim | sim |
+| Risco de banimento | real | ~zero | ~zero |
+| Onboarding | QR code, 1 min | link, ~15 min | link, ~15 min |
+| Prazo para começar | hoje | dias | semanas (App Review) |
+| Custo | só infra | mensalidade por número + tarifa Meta | tarifa Meta |
+| Dá para prometer SLA? | não | sim | sim |
+
+**A trilha escolhida é a do BSP**, por um motivo concreto: o caminho oficial
+por conta própria exige um Business Manager próprio, verificado, para hospedar
+o App da Meta, a verificação de negócio e o App Review — e o nosso está
+bloqueado. O BSP já é parceiro homologado da Meta, então a camada oficial é
+dele; nós só consumimos a API.
+
+### Como o número do cliente entra, via BSP
+
+O que se faz uma vez:
+
+1. Conta de **parceiro** no BSP (360dialog, Gupshup, Twilio, Zenvia…).
+2. Webhook do BSP apontando para o nosso servidor.
+3. Um **`BspAdapter`** implementando a porta `ProvedorWhatsApp` que já existe
+   (`enviarTexto`, `interpretarWebhook`, `obterMidiaBase64`). Duas ou três
+   horas; nada mais no projeto muda.
+
+O que o cliente faz, uma vez por loja. O BSP oferece o fluxo em quatro
+formatos — link direto (zero código), botão em React, implementação própria, ou
+Embedded Signup hospedado por nós (esse exige Tech Provider, então está fora).
+Começar pelo **link direto**:
+
+1. **Cadastro no BSP** — dados da empresa dele.
+2. **Login na Meta**, pelo Embedded Signup do BSP (configuração deles, não
+   nossa).
+3. **Criar/escolher o WABA e registrar o número**, com verificação por SMS ou
+   ligação.
+4. **Tela de permissão**, concedendo a nós a gestão daquele canal.
+
+No fim recebemos o **identificador do canal** e a chave daquele número. É por
+esse identificador que o webhook diz de qual loja veio cada mensagem — o mesmo
+roteamento multi-tenant citado acima.
+
+### Requisitos do número (o que trava onboarding)
+
+- **Não pode estar ativo no app do WhatsApp.** Se estiver, o dono precisa
+  apagar a conta daquele número — e perde o app nele. É a razão de preferir
+  chip novo.
+- Precisa **receber SMS ou ligação** para verificar.
+- O **nome de exibição** passa por aprovação da Meta (horas a dias).
+
+### Quem paga o quê
+
+| Modelo | Como funciona |
+| --- | --- |
+| **Pagamento direto** (preferido) | o cliente cadastra cartão no WABA dele e paga a Meta; o BSP cobra de nós uma mensalidade por número |
+| Revenda | o BSP fatura tudo para nós, e repassamos com markup |
+
+Direto é melhor no começo: não viramos banco nem assumimos inadimplência de
+consumo, e o cliente vê que a conta de mensagens é dele.
+
+Tarifas da Meta: desde julho de 2025 a cobrança é **por mensagem** (não mais
+por conversa). Resposta dentro da janela de 24h era grátis; **a partir de 1º de
+outubro de 2026** as mensagens de serviço passam a ter franquia de 1.000 por
+número/mês e são cobradas na tarifa de utilidade acima disso. Mensagem iniciada
+pela loja é template aprovado e cobrado — marketing custa cerca de 9x a tarifa
+de utilidade no Brasil. Confirmar os valores vigentes com o BSP escolhido, que
+isso muda.
+
+### Se um dia o BM for recuperado: Embedded Signup próprio
+
+Só compensa quando o gargalo for o nosso tempo de onboarding. Exige: App na
+Meta com o produto WhatsApp, verificação do nosso negócio (CNPJ), status de
+Tech Provider, App Review das permissões `whatsapp_business_management` e
+`whatsapp_business_messaging` (com vídeo do fluxo), domínio HTTPS com política
+de privacidade, e o webhook `account_update` assinado.
+
+O botão em si é pequeno: o SDK da Meta com `FB.login({ config_id,
+response_type: "code", override_default_response_type: true })`, e o `config_id`
+sai de **Facebook Login for Business → Configurations → Create from template**.
+O popup é da Meta; o retorno traz `waba_id`, `phone_number_id`, `business_id` e
+um `code` que **expira em 30 segundos** — o servidor troca esse code pelo token
+do cliente, registra o número (`POST /{phone_number_id}/register`) e assina os
+webhooks (`POST /{waba_id}/subscribed_apps`).
+
+### A escada
+
+1. **Evolution com chip dedicado** — piloto, hoje, com o risco declarado no
+   contrato.
+2. **Recurso do BM em paralelo** — lento e de graça.
+3. **BSP** quando aparecer o primeiro cliente pagando assinatura: canal oficial
+   sem depender do nosso BM.
+4. **Embedded Signup próprio** só se o BM voltar e o onboarding manual virar
+   gargalo.
+
+Vale escrever no contrato do piloto que a migração para o canal oficial vai
+acontecer, mantendo o mesmo chip — assim ninguém é pego de surpresa.
+
+O `EvolutionAdapter` também fala com a Cloud API (`integration:
+"WHATSAPP-BUSINESS"`), então parte do caminho oficial já está coberta pelo que
+existe.
 
 ## LGPD
 
@@ -171,7 +279,7 @@ Não é opinião jurídica — se virar operação comercial, vale um advogado.
 | 1 | Uma loja de verdade, onboarding assistido, ainda single-tenant | descobre o que falta antes de generalizar |
 | 2 | Lacunas pelo WhatsApp + perfil estruturado da loja | é o que faz a base ficar boa sem painel |
 | 3 | Multi-tenant (banco, roteamento por instância, painel com login) | só depois de saber o que uma loja precisa |
-| 4 | Cloud API oficial | quando o contrato justificar o custo por conversa |
+| 4 | Canal oficial via BSP | quando alguém pagar assinatura e precisar de SLA |
 | 5 | Formulário guiado e importação do site | escala o onboarding sem você na call |
 
 A tentação é começar pela 3 e pela 5, porque parecem "o produto". Começar pela
