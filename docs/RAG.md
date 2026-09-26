@@ -78,9 +78,26 @@ Script novo: `npm run indexar caminho/do/arquivo.pdf`
 ## Consulta
 
 - Vetoriza a pergunta e busca os `k = 5` mais próximos.
-- **Limiar de distância** (no suplementos, 0.6): a busca vetorial sempre
-  devolve os k mais próximos, mesmo que irrelevantes. Sem o corte, "oi" traz
-  trechos aleatórios e o modelo tenta usá-los.
+- **Limiar de distância**: a busca vetorial sempre devolve os k mais próximos,
+  mesmo que irrelevantes. Sem o corte, "oi" traz trechos aleatórios e o modelo
+  tenta usá-los.
+
+  Calibrado com medição, não com chute. Com `text-embedding-3-small` sobre o
+  documento de exemplo:
+
+  | Tamanho do pedaço | Pergunta do assunto | Pergunta fora do assunto |
+  | --- | --- | --- |
+  | 3.200 caracteres (1 pedaço) | 0,541 – 0,639 | 0,765 – 0,970 |
+  | 900 caracteres (2 pedaços) | 0,423 – 0,566 | 0,741 – 0,916 |
+
+  Pedaço menor separa melhor: com 3.200 a margem entre "dentro" e "fora" era de
+  0,13; com 900 passa de 0,17. Daí os padrões `RAG_TAMANHO_PEDACO=900` e
+  `RAG_LIMIAR=0.65`.
+
+  O efeito colateral aparece em documento curto: um trecho que contém a
+  resposta pode ficar acima do limiar e o bot responde "não encontrei no
+  material". Aí é subir o limiar ou diminuir o pedaço — e é para isso que o
+  painel vai ter o campo de teste de busca.
 - Trecho vazio não é erro: pode ser saudação ou assunto fora da base. Quem
   decide o que fazer é o prompt, não o código.
 
@@ -133,7 +150,7 @@ Todos os preços entram em `src/core/billing.js`, como as outras operações.
 
 | Fase | Entrega | Esforço |
 | --- | --- | --- |
-| 1 | Porta + adaptador `memoria` + `npm run indexar` para `.txt`/`.md` + integração no prompt | ~3h |
+| 1 ✅ | Porta + adaptador `memoria` + `npm run indexar` para `.txt`/`.md` + integração no prompt | feito |
 | 2 | PDF (dependência de extração) e melhor quebra por parágrafo/cabeçalho | ~1h30 |
 | 3 | Painel: upload, lista, remoção e o campo de teste de busca | ~2h |
 | 4 | Adaptador `pgvector`, reaproveitando o Postgres do suplementos-project | ~2h |

@@ -84,6 +84,29 @@ npm test
 - [docs/RAG.md](docs/RAG.md) — plano para o bot responder com base em documentos
   seus (PDF, txt), com porta, adaptadores, ingestão, custos e fases.
 
+## Base de conhecimento (RAG)
+
+Com `RAG_PROVIDER=memoria`, o bot responde com base em documentos seus. Indexe
+`.txt` ou `.md` (PDF fica para a fase 2):
+
+```bash
+npm run indexar exemplos/regras-da-casa.txt
+```
+
+A cada pergunta, o texto é vetorizado, os trechos mais próximos são buscados e
+vão no prompt com regra de citar a origem (`[1]`) e de dizer quando a resposta
+não está no material. Trecho acima do limiar de distância é descartado — é o
+que separa "não encontrei no material" de resposta inventada.
+
+A base fica em `dados/base.json` (fora do versionamento) e a alimentação é só
+local, pelo script ou pelo painel: documento chegando por WhatsApp deixaria
+qualquer pessoa envenenar a base. A base é única, compartilhada por todos os
+contatos.
+
+Ajustes: `RAG_LIMIAR` (0,65), `RAG_TRECHOS` (5), `RAG_TAMANHO_PEDACO` (900
+caracteres) e `RAG_SOBREPOSICAO` (150). O plano completo e as próximas fases
+estão em [docs/RAG.md](docs/RAG.md).
+
 ## Custos
 
 Preço de cada operação e o custo médio por resposta estão em

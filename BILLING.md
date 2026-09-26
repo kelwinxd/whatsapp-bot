@@ -18,6 +18,7 @@ por cima (uns 10% acima da conversão simples).
 | Conversa (saída) | gpt-4o-mini | US$ 0,60 / 1M tokens |
 | Conversa (entrada) | gpt-4o | US$ 2,50 / 1M tokens |
 | Conversa (saída) | gpt-4o | US$ 10,00 / 1M tokens |
+| Embedding (RAG) | text-embedding-3-small | US$ 0,02 / 1M tokens |
 | Transcrição | whisper-1 | US$ 0,006 / minuto |
 | Transcrição | gpt-4o-mini-transcribe | US$ 0,003 / minuto |
 | Fala (TTS) | gpt-4o-mini-tts | US$ 0,015 / minuto |
@@ -37,6 +38,8 @@ por cima (uns 10% acima da conversão simples).
 | Imagem recebida com `detail: low` | ~US$ 0,001 | um bloco de 512×512, custo fixo |
 | **Tarefa da agenda** | **US$ 0,00007** | é uma resposta de texto; a fonte externa é de graça |
 | Tarefa para N números | igual | o texto é gerado uma vez e enviado a todos |
+| **Resposta com RAG** | **US$ 0,00013** | +1 embedding da pergunta e ~450 tokens de trechos na entrada; medido: 4 respostas custaram US$ 0,0005 |
+| Indexar um documento | US$ 0,000007 / 1k tokens | medido: 329 tokens custaram menos de US$ 0,00001 |
 | **Resposta com busca na web** | **US$ 0,01120** | US$ 0,01 por chamada + 8.000 tokens de entrada + a resposta |
 | **Imagem gerada** | **US$ 0,009 a 0,133** | conforme modelo e qualidade |
 | Enviar/receber no WhatsApp | US$ 0 | Evolution é open source e roda na sua máquina |
