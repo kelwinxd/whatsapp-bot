@@ -32,8 +32,14 @@ export class Metricas {
     const temposIA = respondidas.map((e) => e.iaMs).filter((n) => typeof n === "number");
     const temposTotais = respondidas.map((e) => e.totalMs).filter((n) => typeof n === "number");
 
+    const custos = this.eventos
+      .map((e) => e.custoUsd)
+      .filter((c) => typeof c === "number" && c > 0);
+
     return {
       desde: new Date(this.iniciadoEm).toISOString(),
+      custoTotalUsd: custos.length > 0 ? custos.reduce((a, b) => a + b, 0) : null,
+      custoMedioUsd: custos.length > 0 ? custos.reduce((a, b) => a + b, 0) / custos.length : null,
       respondidas: respondidas.length,
       ignoradas: this.eventos.filter((e) => e.tipo === "ignorada").length,
       erros: this.eventos.filter((e) => e.tipo === "erro").length,

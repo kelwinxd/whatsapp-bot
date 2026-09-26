@@ -90,6 +90,13 @@
       .tarefa .quando { color: var(--apagado); font-size: 12px; font-family: ui-monospace, monospace; }
       .tarefa input[type="checkbox"] { width: auto; }
       .rodapeAgenda { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+      .contatos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+      .contatos button {
+        font-size: 12px; padding: 5px 10px; border-radius: 999px;
+        background: #1a1f28; color: var(--apagado);
+      }
+      .contatos button:hover { color: var(--texto); border-color: #39414f; }
+      .contatos .rotulo { font-size: 12px; color: var(--apagado); align-self: center; margin-right: 2px; }
       .rodapeAgenda .aviso { font-size: 13px; }
       @media (max-width: 560px) { .tarefa .grade2 { grid-template-columns: 1fr; } }
       .tipo\.envio-manual, .tipo.envio-manual { color: var(--azul); }
@@ -112,6 +119,7 @@
         <div class="campo">
           <label for="telefone">Telefone (DDI + DDD + número)</label>
           <input id="telefone" inputmode="numeric" placeholder="5519999999999" />
+          <div class="contatos" id="contatosDisparo"></div>
         </div>
         <div class="campo">
           <label for="texto">Mensagem</label>
@@ -160,6 +168,8 @@
           ["Erros", r.erros ?? 0],
           ["Ignoradas", r.ignoradas ?? 0],
           ["Disparos manuais", r.enviadasManualmente ?? 0],
+          ["Gasto na sessão", r.custoTotalUsd == null ? "—" : "US$ " + r.custoTotalUsd.toFixed(4)],
+          ["Gasto por resposta", r.custoMedioUsd == null ? "—" : "US$ " + r.custoMedioUsd.toFixed(5)],
           ["IA média", ms(r.iaMedioMs)],
           ["IA p95", ms(r.iaP95Ms)],
           ["Total médio", ms(r.totalMedioMs)],
@@ -175,10 +185,21 @@
       // A agenda e editavel, entao o refresh automatico nao pode sobrescrever o
       // que esta sendo digitado: enquanto houver edicao pendente, a secao nao
       // e redesenhada.
+      let contatos = [];
       let agendaSuja = false;
       let vocabulario = { horas: [], dias: [], frequencias: [] };
 
       const AVANCADO = "__AVANCADO__";
+
+      // Atalhos de telefone: clicar preenche o campo, para não ter que digitar
+      // (nem lembrar) o número inteiro.
+      function chipsDeContatos(rotulo = "") {
+        if (contatos.length === 0) return "";
+        const botoes = contatos
+          .map((c) => `<button type="button" data-numero="${escapar(c.numero)}">${escapar(c.nome)} · ${escapar(c.numero)}</button>`)
+          .join("");
+        return `${rotulo ? `<span class="rotulo">${escapar(rotulo)}</span>` : ""}${botoes}`;
+      }
 
       function opcoesSelect(itens, selecionado) {
         return itens
@@ -227,6 +248,7 @@
               <input data-campo="telefones" placeholder="5519999999999, 5511888888888"
                 value="${v((t.telefones ?? []).join(", "))}" />
             </div>
+            <div class="contatos" data-contatos>${chipsDeContatos("usar:")}</div>
             <div class="horario" style="margin-top:8px">
               ${selectQuando(horario)}
               ${selectHora(horario)}
@@ -337,6 +359,16 @@
         const botao = ev.target.closest("button");
         if (!botao) return;
 
+        // Chip de contato: soma o número à lista daquela tarefa, sem repetir.
+        if (botao.dataset.numero) {
+          const campoTelefones = botao.closest(".tarefa").querySelector('[data-campo="telefones"]');
+          const atuais = campoTelefones.value.split(",").map((n) => n.trim()).filter(Boolean);
+          if (!atuais.includes(botao.dataset.numero)) atuais.push(botao.dataset.numero);
+          campoTelefones.value = atuais.join(", ");
+          marcarSuja();
+          return;
+        }
+
         if (botao.id === "salvarAgenda") return salvarAgenda();
 
         if (botao.id === "novaTarefa") {
@@ -421,6 +453,10 @@
           const estado = await (await fetch("/api/estado")).json();
           pintarEtiquetas(estado, true);
           pintarMetricas(estado.resumo ?? {});
+          if (estado.contatos?.length && contatos.length === 0) {
+            contatos = estado.contatos;
+            $("contatosDisparo").innerHTML = chipsDeContatos();
+          }
           pintarTarefas(estado.tarefas);
           pintarEventos(estado.eventos);
           if (primeiraCarga && estado.numeroTeste && !$("telefone").value) {
@@ -435,6 +471,11 @@
       $("prontas").innerHTML = PRONTAS.map(
         (t, i) => `<button data-i="${i}">${escapar(t.length > 28 ? t.slice(0, 28) + "…" : t)}</button>`,
       ).join("");
+      $("contatosDisparo").addEventListener("click", (ev) => {
+        const numero = ev.target.dataset?.numero;
+        if (numero) $("telefone").value = numero;
+      });
+
       $("prontas").addEventListener("click", (ev) => {
         const i = ev.target.dataset?.i;
         if (i != null) $("texto").value = PRONTAS[i];

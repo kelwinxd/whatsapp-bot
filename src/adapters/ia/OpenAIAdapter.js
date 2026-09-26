@@ -68,7 +68,16 @@ export class OpenAIAdapter extends ProvedorIA {
       );
     }
 
-    return texto;
+    // Devolve o consumo junto do texto: é o que permite calcular o custo real
+    // em vez de estimar por média. Quem só quer o texto lê .texto.
+    return {
+      texto,
+      uso: {
+        modelo: this.modelo,
+        tokensEntrada: dados.usage?.prompt_tokens ?? 0,
+        tokensSaida: dados.usage?.completion_tokens ?? 0,
+      },
+    };
   }
 
   async transcrever({ base64, mimetype }) {
@@ -78,6 +87,10 @@ export class OpenAIAdapter extends ProvedorIA {
     const formulario = new FormData();
     formulario.append("model", this.modeloTranscricao);
     formulario.append("language", "pt");
+    // verbose_json traz a duração do áudio, que é a unidade de cobrança da
+    // transcrição — sem ela, o custo só daria para estimar pelo tamanho do
+    // arquivo.
+    formulario.append("response_format", "verbose_json");
     formulario.append(
       "file",
       new Blob([Buffer.from(base64, "base64")], { type: mimetype }),
@@ -97,6 +110,9 @@ export class OpenAIAdapter extends ProvedorIA {
     }
 
     const dados = await resposta.json();
-    return (dados.text ?? "").trim();
+    return {
+      texto: (dados.text ?? "").trim(),
+      uso: { modelo: this.modeloTranscricao, segundos: dados.duration ?? 0 },
+    };
   }
 }

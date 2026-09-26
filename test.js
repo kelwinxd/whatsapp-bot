@@ -8,6 +8,7 @@ import { MemoriaRepo } from "./src/adapters/conversas/MemoriaRepo.js";
 import { BotService } from "./src/core/BotService.js";
 import { montarPromptDeSistema } from "./src/core/prompt.js";
 import { Metricas } from "./src/core/Metricas.js";
+import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
 import { resolverHorario, descreverHorario, decomporHorario, vocabulario } from "./src/core/horarios.js";
 
@@ -905,4 +906,74 @@ test("valida cada número da lista", () => {
 
   const problemas = agenda.validar([{ ...TAREFA, telefones: ["5519999999999", "99999"] }]);
   assert.match(problemas.join(" "), /telefone incompleto \(99999\)/);
+});
+
+// --- Custos ----------------------------------------------------------------
+
+test("billing calcula o custo de cada operação", () => {
+  // 190 tokens de entrada e 60 de saída, que é a média medida de uma resposta.
+  const texto = custoDeTexto({ modelo: "gpt-4o-mini", tokensEntrada: 190, tokensSaida: 60 });
+  assert.ok(texto > 0.00006 && texto < 0.00008);
+
+  // O gpt-4o é ~16x mais caro no mesmo consumo.
+  const grande = custoDeTexto({ modelo: "gpt-4o", tokensEntrada: 190, tokensSaida: 60 });
+  assert.ok(grande / texto > 15);
+
+  assert.equal(custoDeTranscricao({ modelo: "whisper-1", segundos: 60 }), 0.006);
+  assert.equal(custoDeTranscricao({ modelo: "whisper-1", segundos: 30 }), 0.003);
+  assert.equal(custoDeImagemGerada({ modelo: "gpt-image-1.5", qualidade: "high" }), 0.133);
+
+  // Busca: taxa por chamada mais o bloco fixo de 8.000 tokens de entrada.
+  const busca = custoDeBusca({ modelo: "gpt-4o-mini", chamadas: 1 });
+  assert.ok(busca > 0.0111 && busca < 0.0113);
+
+  // Modelo desconhecido devolve null, não zero: zero apareceria como grátis.
+  assert.equal(custoDeTexto({ modelo: "modelo-que-nao-existe", tokensEntrada: 10 }), null);
+  assert.equal(custoDeTranscricao({ modelo: "xxx", segundos: 10 }), null);
+  assert.equal(custoDeImagemGerada({ modelo: "gpt-image-1.5", qualidade: "ultra" }), null);
+
+  // somar ignora o que não soubemos calcular.
+  assert.equal(somar(0.001, null, 0.002), 0.003);
+});
+
+test("o custo real da chamada entra nas métricas", async () => {
+  const metricas = new Metricas();
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async () => {},
+    },
+    // Adaptador que devolve { texto, uso }, como o da OpenAI faz.
+    ia: {
+      nome: "falsa",
+      responder: async () => ({
+        texto: "oi!",
+        uso: { modelo: "gpt-4o-mini", tokensEntrada: 190, tokensSaida: 60 },
+      }),
+    },
+    conversas: new MemoriaRepo({ maxHistorico: 4 }),
+    metricas,
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.processarWebhook(webhook("oi"));
+
+  const evento = metricas.eventos[0];
+  assert.ok(evento.custoUsd > 0);
+  assert.equal(metricas.resumo().custoTotalUsd, evento.custoUsd);
+
+  // Dublê que devolve só string continua funcionando — sem custo calculado.
+  const semUso = new BotService({
+    whatsapp: { nome: "falso", interpretarWebhook: (c) => zapi.interpretarWebhook(c), enviarTexto: async () => {} },
+    ia: { nome: "falsa", responder: async () => "texto puro" },
+    conversas: new MemoriaRepo({ maxHistorico: 4 }),
+    metricas: new Metricas(),
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+  const r = await semUso.processarWebhook(webhook("oi"));
+  assert.equal(r.tratada, true);
+  assert.equal(semUso.metricas.resumo().custoTotalUsd, null);
 });

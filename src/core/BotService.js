@@ -1,5 +1,6 @@
 import { montarPromptDeSistema, SEPARADOR_DE_MENSAGENS } from "./prompt.js";
 import { metricasNulas } from "./Metricas.js";
+import { custoDeTexto, custoDeTranscricao, somar } from "./billing.js";
 
 // Regra do bot, sem saber quem entrega a mensagem nem quem gera o texto:
 // recebe as três portas prontas pelo construtor (injeção de dependência).
@@ -94,6 +95,18 @@ export class BotService {
     }
   }
 
+  // Os adaptadores podem devolver só o texto (como os dublês dos testes) ou
+  // { texto, uso } — com o uso, o custo sai exato em vez de estimado.
+  normalizarDaIA(retorno) {
+    if (typeof retorno === "string") return { texto: retorno, uso: null };
+    return { texto: retorno?.texto ?? "", uso: retorno?.uso ?? null };
+  }
+
+  custoDeUso(uso, tipo) {
+    if (!uso) return null;
+    return tipo === "transcricao" ? custoDeTranscricao(uso) : custoDeTexto(uso);
+  }
+
   // Tempo de "digitando..." pelo tamanho do texto, em ms. Cada adaptador
   // converte para a unidade da sua API.
   digitandoMs(texto) {
@@ -167,12 +180,16 @@ export class BotService {
     if (midia.tipo === "audio") {
       // trim aqui e não só no adaptador: silêncio costuma voltar como espaços
       // ou string vazia, e a decisão de "não deu para entender" é do núcleo.
-      const transcricao = ((await this.ia.transcrever({ base64, mimetype })) ?? "").trim();
-      if (!transcricao) return { vazio: true };
+      const retorno = await this.ia.transcrever({ base64, mimetype });
+      const { texto: bruto, uso } = this.normalizarDaIA(retorno);
+      const transcricao = bruto.trim();
+      const custo = this.custoDeUso(uso, "transcricao");
+      if (!transcricao) return { vazio: true, custo };
       return {
         paraIA: transcricao,
         paraHistorico: `[áudio] ${transcricao}`,
         transcricao,
+        custo,
       };
     }
 
@@ -229,10 +246,12 @@ export class BotService {
 
     try {
       const antesDaIA = Date.now();
-      const resposta = await this.ia.responder({
-        sistema: montarPromptDeSistema({ nome: "amigo", ...this.prompt }),
-        mensagens: [{ role: "user", content: pedido }],
-      });
+      const { texto: resposta, uso } = this.normalizarDaIA(
+        await this.ia.responder({
+          sistema: montarPromptDeSistema({ nome: "amigo", ...this.prompt }),
+          mensagens: [{ role: "user", content: pedido }],
+        }),
+      );
       const iaMs = Date.now() - antesDaIA;
 
       let partes = [];
@@ -254,6 +273,7 @@ export class BotService {
         partes: partes.length,
         iaMs,
         totalMs: Date.now() - inicio,
+        custoUsd: this.custoDeUso(uso),
       });
 
       this.logger.log(
@@ -289,7 +309,8 @@ export class BotService {
     const inicio = Date.now();
 
     try {
-      const { paraIA, paraHistorico, transcricao, vazio } = await this.prepararConteudo(mensagem);
+      const { paraIA, paraHistorico, transcricao, vazio, custo: custoDaMidia } =
+        await this.prepararConteudo(mensagem);
 
       // Áudio sem fala reconhecível: avisa em vez de mandar vazio para a IA.
       if (vazio) {
@@ -303,14 +324,17 @@ export class BotService {
       }
 
       const antesDaIA = Date.now();
-      const resposta = await this.ia.responder({
-        sistema: montarPromptDeSistema({ nome, ...this.prompt }),
-        mensagens: [
-          ...(await this.conversas.historico(telefone)),
-          { role: "user", content: paraIA },
-        ],
-      });
+      const { texto: resposta, uso } = this.normalizarDaIA(
+        await this.ia.responder({
+          sistema: montarPromptDeSistema({ nome, ...this.prompt }),
+          mensagens: [
+            ...(await this.conversas.historico(telefone)),
+            { role: "user", content: paraIA },
+          ],
+        }),
+      );
       const iaMs = Date.now() - antesDaIA;
+      const custoUsd = somar(custoDaMidia, this.custoDeUso(uso));
 
       // Só guarda depois de dar certo: falha na IA não deixa a pergunta órfã
       // no histórico.
@@ -332,6 +356,7 @@ export class BotService {
         iaMs,
         envioMs: Date.now() - antesDoEnvio,
         totalMs: Date.now() - inicio,
+        custoUsd,
       });
 
       if (transcricao) this.logger.log(`🎤 ${telefone} disse: ${transcricao}`);

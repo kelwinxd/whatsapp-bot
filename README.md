@@ -79,6 +79,13 @@ npm test
 
 `GET /health` mostra quais provedores estão ativos.
 
+## Custos
+
+Preço de cada operação e o custo médio por resposta estão em
+[BILLING.md](BILLING.md); os valores vivem em `src/core/billing.js`. O painel
+mostra o gasto acumulado da sessão, calculado com os tokens reais que a OpenAI
+reporta em cada chamada.
+
 ## Painel
 
 <http://localhost:3000/painel> — página em HTML puro, servida pelo próprio
