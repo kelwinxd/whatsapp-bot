@@ -83,6 +83,9 @@ npm test
 
 - [docs/RAG.md](docs/RAG.md) — plano para o bot responder com base em documentos
   seus (PDF, txt), com porta, adaptadores, ingestão, custos e fases.
+- [docs/PRODUTO_SUPORTE.md](docs/PRODUTO_SUPORTE.md) — notas de desenho para
+  virar produto de suporte para lojas: como alimentar a base com gente leiga,
+  conta da OpenAI, multi-tenant, margem e risco.
 
 ## Base de conhecimento (RAG)
 
