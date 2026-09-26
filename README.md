@@ -87,6 +87,27 @@ npm test
   virar produto de suporte para lojas: como alimentar a base com gente leiga,
   conta da OpenAI, multi-tenant, margem e risco.
 
+## Cadastro da loja
+
+<http://localhost:3000/painel/loja.html> — formulário guiado com 25 perguntas
+(horário, pagamento, entrega, trocas, produtos, o que a loja *não* faz,
+perguntas frequentes). Ao salvar, as respostas viram duas coisas:
+
+- um **resumo estruturado** que vai direto no prompt, com os valores que
+  precisam sair exatos (horário, taxa, prazo) — RAG erraria um dígito;
+- um **documento em markdown** indexado na base, para o texto corrido
+  (política de troca, descrição de produto, FAQ).
+
+O perfil `PROMPT_PERFIL=loja` usa os dois: mantém a base de comportamento no
+WhatsApp (formatação, brevidade, resposta picada) e acrescenta as regras de
+atendimento — não inventar preço nem prazo, não prometer desconto fora da
+tabela, e encaminhar para uma pessoa em reclamação, problema de pedido ou
+dúvida de saúde.
+
+Rotas: `GET /api/loja/formulario` (esquema das perguntas),
+`GET /api/loja`, `POST /api/loja/previa` e `PUT /api/loja` (salva e indexa).
+As respostas ficam em `dados/loja.json`, fora do versionamento.
+
 ## Base de conhecimento (RAG)
 
 Com `RAG_PROVIDER=memoria`, o bot responde com base em documentos seus. Indexe

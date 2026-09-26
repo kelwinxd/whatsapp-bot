@@ -4,6 +4,9 @@ import { BotService } from "./src/core/BotService.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { Agenda } from "./src/core/Agenda.js";
 import { criarServidor } from "./src/server.js";
+import { resumoParaPrompt } from "./src/core/formularioLoja.js";
+import { writeFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 
 // Ponto de entrada: escolhe as implementações, monta o serviço e sobe o HTTP.
 // É o único lugar que conhece todas as peças ao mesmo tempo.
@@ -12,14 +15,33 @@ console.log("🔧 Iniciando...");
 
 const dependencias = montarDependencias(config);
 const metricas = new Metricas();
-const bot = new BotService({ ...dependencias, prompt: config.prompt, metricas, ritmo: config.ritmo, imagem: config.imagem, base: dependencias.base });
+const loja = config.loja.dados
+  ? { ...config.loja.dados, resumo: resumoParaPrompt(config.loja.dados.respostas) }
+  : null;
+
+const bot = new BotService({
+  ...dependencias,
+  prompt: config.prompt,
+  metricas,
+  ritmo: config.ritmo,
+  imagem: config.imagem,
+  base: dependencias.base,
+  loja,
+});
+
+// Gravação das respostas da loja: o servidor recebe isto por injeção para não
+// conhecer disco nem caminho de arquivo.
+async function salvarLoja(dados) {
+  await mkdir(dirname(config.loja.arquivo), { recursive: true });
+  await writeFile(config.loja.arquivo, `${JSON.stringify(dados, null, 2)}\n`, "utf8");
+}
 const agenda = new Agenda({
   tarefas: config.agenda.tarefas,
   fusoHorario: config.agenda.fusoHorario,
   bot,
   metricas,
 });
-const app = criarServidor({ bot, metricas, agenda, base: dependencias.base, config });
+const app = criarServidor({ bot, metricas, agenda, base: dependencias.base, salvarLoja, config });
 
 const server = app.listen(config.porta, () => {
   // O Node chama este callback mesmo quando a porta está ocupada (com
@@ -34,6 +56,7 @@ const server = app.listen(config.porta, () => {
   console.log(`💬 Prompt: ${config.prompt.textoCustomizado ? "customizado" : config.prompt.perfil}`);
   console.log(`🖼️  Detalhe de imagem: ${config.imagem.detalhe}`);
   console.log(`📚 Base de conhecimento: ${dependencias.base.nome}`);
+  if (loja?.respostas?.nome) console.log(`🏪 Loja: ${loja.respostas.nome}`);
   console.log(`🖥️  Painel em http://localhost:${config.porta}/painel`);
   const quantas = agenda.iniciar();
   if (quantas > 0) console.log(`⏰ ${quantas} tarefa(s) na agenda`);

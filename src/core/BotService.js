@@ -57,6 +57,8 @@ export class BotService {
     ia,
     conversas,
     base = null,
+    // { respostas, resumo } do formulário da loja; o resumo vai no prompt.
+    loja = null,
     prompt = { perfil: "suplementos" },
     metricas = metricasNulas,
     ritmo = {},
@@ -70,6 +72,7 @@ export class BotService {
     this.ia = ia;
     this.conversas = conversas;
     this.base = base;
+    this.loja = loja;
     this.prompt = prompt;
     this.metricas = metricas;
     this.ritmo = { ...RITMO_PADRAO, ...ritmo };
@@ -260,7 +263,11 @@ export class BotService {
       const antesDaIA = Date.now();
       const { texto: resposta, uso } = this.normalizarDaIA(
         await this.ia.responder({
-          sistema: montarPromptDeSistema({ nome: "amigo", ...this.prompt }),
+          sistema: montarPromptDeSistema({
+            nome: "amigo",
+            ...this.prompt,
+            loja: this.loja?.resumo ?? null,
+          }),
           mensagens: [{ role: "user", content: pedido }],
         }),
       );
@@ -344,7 +351,12 @@ export class BotService {
       const antesDaIA = Date.now();
       const { texto: resposta, uso } = this.normalizarDaIA(
         await this.ia.responder({
-          sistema: montarPromptDeSistema({ nome, ...this.prompt, trechos }),
+          sistema: montarPromptDeSistema({
+            nome,
+            ...this.prompt,
+            trechos,
+            loja: this.loja?.resumo ?? null,
+          }),
           mensagens: [
             ...(await this.conversas.historico(telefone)),
             { role: "user", content: paraIA },

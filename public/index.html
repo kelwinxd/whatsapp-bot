@@ -107,7 +107,10 @@
   <body>
     <div class="container">
       <h1>Painel do bot</h1>
-      <p class="sub">Atualiza a cada 3 segundos. Uso local.</p>
+      <p class="sub">
+        Atualiza a cada 3 segundos. Uso local.
+        <a href="/painel/loja.html" style="color: var(--azul)">cadastro da loja →</a>
+      </p>
 
       <div class="linha" id="etiquetas"></div>
 
@@ -517,7 +520,16 @@
         .catch(() => {})
         .finally(atualizar);
 
-      setInterval(atualizar, 3000);
+      // O refresh é polling: uma chamada a /api/estado a cada 3s. Com a aba
+      // escondida não faz sentido continuar batendo, então pausa — e atualiza
+      // na hora em que você volta para ela.
+      setInterval(() => {
+        if (document.visibilityState === "visible") atualizar();
+      }, 3000);
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") atualizar();
+      });
     </script>
   </body>
 </html>

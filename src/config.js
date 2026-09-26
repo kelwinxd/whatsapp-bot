@@ -47,6 +47,17 @@ function lerContatos(bruto, numeroTeste) {
   return contatos;
 }
 
+// Respostas do formulário da loja. Mesmo espírito da agenda: dado de operação
+// fica em arquivo, não em variável de ambiente.
+function carregarLoja(caminho = process.env.LOJA_ARQUIVO ?? "dados/loja.json") {
+  try {
+    return JSON.parse(readFileSync(caminho, "utf8"));
+  } catch (erro) {
+    if (erro.code !== "ENOENT") console.error(`⚠️  Não foi possível ler ${caminho}: ${erro.message}`);
+    return null;
+  }
+}
+
 export const config = {
   porta: Number(process.env.PORT ?? 3000),
 
@@ -114,6 +125,11 @@ export const config = {
   },
 
   agenda: carregarAgenda(),
+
+  loja: {
+    arquivo: process.env.LOJA_ARQUIVO ?? "dados/loja.json",
+    dados: carregarLoja(),
+  },
 
   // RAG: responder com base em documentos indexados. "nenhum" desliga.
   rag: {

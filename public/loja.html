@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadastro da loja</title>
+    <style>
+      :root {
+        --fundo: #0f1115;
+        --cartao: #171a21;
+        --borda: #252a35;
+        --texto: #e6e8eb;
+        --apagado: #8b93a1;
+        --verde: #3ddc84;
+        --vermelho: #ff6b6b;
+        --amarelo: #ffd166;
+        --azul: #5aa9e6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px 16px 64px;
+        background: var(--fundo);
+        color: var(--texto);
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .container { max-width: 760px; margin: 0 auto; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--apagado); margin: 26px 0 10px; }
+      .sub { color: var(--apagado); font-size: 13px; margin: 0 0 18px; }
+      .sub a { color: var(--azul); }
+      .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px; padding: 16px; }
+      .campo { margin-bottom: 14px; }
+      .campo:last-child { margin-bottom: 0; }
+      .campo label { display: block; font-size: 14px; margin-bottom: 5px; }
+      .campo .exemplo { display: block; font-size: 12px; color: var(--apagado); margin-bottom: 6px; }
+      input, textarea, button {
+        font: inherit; color: var(--texto); background: #11141a;
+        border: 1px solid var(--borda); border-radius: 8px; padding: 11px 12px;
+      }
+      input, textarea { width: 100%; }
+      textarea { resize: vertical; min-height: 78px; }
+      input:focus, textarea:focus { outline: none; border-color: var(--azul); }
+      button { cursor: pointer; background: #1e222b; }
+      button:hover { border-color: #39414f; }
+      button.primario { background: var(--verde); color: #06240f; border-color: transparent; font-weight: 600; }
+      button:disabled { opacity: .5; cursor: progress; }
+      .barra {
+        position: sticky; bottom: 0; margin-top: 20px; padding: 14px 0 0;
+        background: linear-gradient(to top, var(--fundo) 70%, transparent);
+        display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      }
+      .progresso { font-size: 13px; color: var(--apagado); }
+      #aviso { font-size: 13px; }
+      pre {
+        background: #11141a; border: 1px solid var(--borda); border-radius: 8px;
+        padding: 14px; overflow-x: auto; font-size: 13px; white-space: pre-wrap;
+        color: var(--apagado);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Cadastro da loja</h1>
+      <p class="sub">
+        Responda o que souber; o que ficar em branco é ignorado. Ao salvar, as
+        respostas viram um documento que o bot passa a consultar.
+        <a href="/painel/">← voltar ao painel</a>
+      </p>
+
+      <div id="formulario"><p class="sub">Carregando...</p></div>
+
+      <div class="barra">
+        <button class="primario" id="salvar">Salvar e indexar</button>
+        <button id="verDocumento">Ver documento gerado</button>
+        <span class="progresso" id="progresso"></span>
+        <span id="aviso"></span>
+      </div>
+
+      <div id="documento"></div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const escapar = (s) =>
+        String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+      let secoes = [];
+
+      function campoHtml(campo, valor) {
+        const comum = `id="campo-${campo.id}" data-campo="${campo.id}" placeholder="${escapar(campo.exemplo ?? "")}"`;
+        const entrada =
+          campo.tipo === "longo"
+            ? `<textarea ${comum}>${escapar(valor)}</textarea>`
+            : `<input ${comum} value="${escapar(valor)}" />`;
+
+        return `<div class="campo">
+            <label for="campo-${campo.id}">${escapar(campo.rotulo)}</label>
+            ${campo.exemplo ? `<span class="exemplo">ex.: ${escapar(campo.exemplo)}</span>` : ""}
+            ${entrada}
+          </div>`;
+      }
+
+      function pintar(respostas) {
+        $("formulario").innerHTML = secoes
+          .map(
+            (secao) => `<h2>${escapar(secao.secao)}</h2>
+              <div class="cartao">${secao.campos.map((c) => campoHtml(c, respostas[c.id] ?? "")).join("")}</div>`,
+          )
+          .join("");
+      }
+
+      function lerRespostas() {
+        const respostas = {};
+        for (const el of document.querySelectorAll("[data-campo]")) {
+          const valor = el.value.trim();
+          if (valor) respostas[el.dataset.campo] = valor;
+        }
+        return respostas;
+      }
+
+      function mostrarProgresso(progresso) {
+        if (progresso) $("progresso").textContent = `${progresso.respondidos} de ${progresso.total} respondidas`;
+      }
+
+      function avisar(texto, cor) {
+        $("aviso").textContent = texto;
+        $("aviso").style.color = cor;
+      }
+
+      async function carregar() {
+        const [{ secoes: s }, estado] = await Promise.all([
+          fetch("/api/loja/formulario").then((r) => r.json()),
+          fetch("/api/loja").then((r) => r.json()),
+        ]);
+        secoes = s;
+        pintar(estado.respostas ?? {});
+        mostrarProgresso(estado.progresso);
+        if (estado.indexadoEm) {
+          avisar(`indexado em ${new Date(estado.indexadoEm).toLocaleString("pt-BR")}`, "var(--apagado)");
+        }
+      }
+
+      $("salvar").addEventListener("click", async () => {
+        $("salvar").disabled = true;
+        avisar("Salvando e indexando...", "var(--apagado)");
+        try {
+          const resposta = await fetch("/api/loja", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ respostas: lerRespostas() }),
+          });
+          const dados = await resposta.json();
+          if (!resposta.ok) throw new Error(dados.erro ?? "falhou");
+
+          mostrarProgresso(dados.progresso);
+          avisar(
+            dados.pedacos
+              ? `✅ salvo e indexado em ${dados.pedacos} pedaço(s)`
+              : "✅ salvo (RAG desligado: ponha RAG_PROVIDER=memoria para indexar)",
+            dados.pedacos ? "var(--verde)" : "var(--amarelo)",
+          );
+          $("documento").innerHTML = `<h2>Documento gerado</h2><pre>${escapar(dados.documento)}</pre>`;
+        } catch (erro) {
+          avisar("❌ " + erro.message, "var(--vermelho)");
+        } finally {
+          $("salvar").disabled = false;
+        }
+      });
+
+      $("verDocumento").addEventListener("click", async () => {
+        const resposta = await fetch("/api/loja/previa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ respostas: lerRespostas() }),
+        });
+        const dados = await resposta.json();
+        mostrarProgresso(dados.progresso);
+        $("documento").innerHTML = `<h2>Documento gerado</h2><pre>${escapar(dados.documento)}</pre>`;
+      });
+
+      carregar();
+    </script>
+  </body>
+</html>
