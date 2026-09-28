@@ -214,6 +214,30 @@ marcador, os dois formatos são aceitos.
 Controle em `RESPOSTA_MAX_MENSAGENS` (1 volta ao comportamento de mensagem
 única). O excedente é juntado na última mensagem, nunca descartado.
 
+## Atendimento humano (handoff)
+
+O bot sai da frente quando uma pessoa assume a conversa. Três gatilhos:
+
+| Gatilho | Efeito |
+| --- | --- |
+| Alguém responde pelo celular | pausa 30 min naquela conversa, e volta sozinho |
+| `#pausar` no chat do cliente | pausa sem prazo, até `#voltar` |
+| O bot encaminha (marcador `[HUMANO]`) | pausa sem prazo e avisa a equipe |
+
+A detecção usa o id da mensagem: o evento `fromMe` cujo id não saiu do bot foi
+digitado no celular. Sem essa distinção o bot se pausaria a cada resposta que
+dá, porque a mensagem dele também volta como `fromMe`.
+
+No encaminhamento, o modelo escreve `[HUMANO]` no fim; o bot remove o marcador
+antes de enviar, pausa a conversa e manda para o telefone do responsável
+(campo no cadastro da loja) o número do cliente e a última mensagem dele.
+
+O painel lista as conversas pausadas com o prazo restante, tem "Devolver ao
+bot" em cada uma e um "Assumir conversa" a partir do campo de telefone. Rotas:
+`POST /api/atendimento/:telefone/pausar` e `.../retomar`.
+
+A pausa fica em memória: reiniciar o bot devolve todas as conversas a ele.
+
 ## Agenda (mensagens na hora marcada)
 
 O bot também pode iniciar conversa: `agenda.json` (copie de

@@ -11,6 +11,7 @@ import { montarDocumento, resumoParaPrompt, contarRespostas, apresentacaoDaLoja 
 import { Lojas, gerarSlug, nomeDoDocumento } from "./src/core/lojas.js";
 import { separarPerfil } from "./src/core/prompt.js";
 import { ControleDeAtendimento, IdsEnviados, comandoDoDono } from "./src/core/atendimento.js";
+import { normalizarTelefone } from "./src/core/telefone.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -1626,4 +1627,29 @@ test("o marcador [HUMANO] pausa, avisa a equipe e não vaza para o cliente", asy
 
   await bot.processarWebhook(webhook("alô?"));
   assert.equal(enviadas.filter((e) => e.telefone === "5519999999999").length, 1);
+});
+
+test("normalizarTelefone acrescenta o DDI quando falta", () => {
+  // Celular e fixo sem DDI ganham o 55 — é o que faz a conversa casar.
+  assert.equal(normalizarTelefone("(19) 99372-3677"), "5519993723677");
+  assert.equal(normalizarTelefone("1938661234"), "551938661234");
+
+  // Já com DDI, passa intacto.
+  assert.equal(normalizarTelefone("5519993723677"), "5519993723677");
+  assert.equal(normalizarTelefone("+55 (19) 99372-3677"), "5519993723677");
+
+  // Número de outro país não é adulterado.
+  assert.equal(normalizarTelefone("14155552671"), "5514155552671"); // 11 dígitos: vira BR
+  assert.equal(normalizarTelefone("442071234567"), "442071234567"); // 12: intacto
+
+  assert.equal(normalizarTelefone(""), "");
+  assert.equal(normalizarTelefone(undefined), "");
+});
+
+test("a agenda também normaliza o DDI dos destinos", () => {
+  assert.deepEqual(normalizarTelefones({ telefones: ["(19) 99372-3677", "5511988887777"] }), [
+    "5519993723677",
+    "5511988887777",
+  ]);
+  assert.deepEqual(normalizarTelefones({ telefone: "19 99372-3677" }), ["5519993723677"]);
 });

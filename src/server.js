@@ -2,6 +2,7 @@ import express from "express";
 import { fileURLToPath } from "node:url";
 import { perfisDisponiveis } from "./core/prompt.js";
 import { vocabulario } from "./core/horarios.js";
+import { normalizarTelefone } from "./core/telefone.js";
 import { PERGUNTAS, montarDocumento, contarRespostas } from "./core/formularioLoja.js";
 
 // Camada HTTP: só traduz requisição em chamada de serviço. Recebe o BotService
@@ -67,6 +68,7 @@ export function criarServidor({
       perfil: bot.prompt?.perfil ?? null,
       imagemDetalhe: bot.imagem?.detalhe ?? null,
       tarefas: agenda?.listar() ?? [],
+      pausados: bot.atendimento?.listar() ?? [],
       resumo: metricas.resumo(),
       eventos: metricas.eventos,
     }),
@@ -103,6 +105,26 @@ export function criarServidor({
       logger.error("❌ Erro ao executar tarefa:", erro);
       res.status(400).json({ erro: erro.message });
     }
+  });
+
+  // --- Atendimento humano ---
+  // Pausar e retomar pelo painel, além dos comandos #pausar/#voltar que o dono
+  // usa no próprio chat.
+  app.post("/api/atendimento/:telefone/pausar", (req, res) => {
+    // Normaliza aqui: "(19) 99372-3677" precisa virar 5519993723677, que é
+    // como o WhatsApp identifica a conversa.
+    const telefone = normalizarTelefone(req.params.telefone);
+    const minutos = req.body?.minutos === undefined ? null : Number(req.body.minutos);
+    const pausa = bot.atendimento.pausar(telefone, minutos);
+    logger.log(`🙋 ${telefone}: pausado pelo painel`);
+    res.json({ pausado: true, ...pausa });
+  });
+
+  app.post("/api/atendimento/:telefone/retomar", (req, res) => {
+    const telefone = normalizarTelefone(req.params.telefone);
+    const retomou = bot.atendimento.retomar(telefone);
+    logger.log(`🤖 ${telefone}: retomado pelo painel`);
+    res.json({ retomado: retomou });
   });
 
   // --- Lojas (formulário guiado) ---
@@ -191,7 +213,7 @@ export function criarServidor({
   });
 
   app.post("/api/enviar", async (req, res) => {
-    const telefone = String(req.body?.telefone ?? config.numeroTeste ?? "").replace(/\D/g, "");
+    const telefone = normalizarTelefone(req.body?.telefone ?? config.numeroTeste ?? "");
     const texto = String(req.body?.texto ?? "").trim();
 
     if (!telefone) return res.status(400).json({ erro: "informe um telefone" });

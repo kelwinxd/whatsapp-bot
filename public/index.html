@@ -77,6 +77,13 @@
       .tipo.erro { color: var(--vermelho); }
       .tipo.ignorada { color: var(--amarelo); }
       .tipo.agendada { color: var(--azul); }
+      .tipo.pausada { color: var(--amarelo); }
+      .tipo.retomada { color: var(--verde); }
+      .pausado { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--borda); padding: 10px 0; }
+      .pausado:last-child { border-bottom: 0; }
+      .pausado .numero { font-family: ui-monospace, monospace; }
+      .pausado .prazo { color: var(--apagado); font-size: 12px; }
+      .pausado button { margin-left: auto; font-size: 12px; padding: 6px 10px; }
       .tarefa { border-bottom: 1px solid var(--borda); padding: 14px 0; }
       .tarefa:last-child { border-bottom: 0; }
       .tarefa .cabecalho { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -131,9 +138,15 @@
         <div class="linha prontas" id="prontas"></div>
         <div class="linha" style="margin-top: 10px">
           <button class="primario" id="enviar">Enviar</button>
+          <button id="pausarConversa" title="Assume a conversa deste número: o bot para de responder">
+            Assumir conversa
+          </button>
         </div>
         <div id="aviso"></div>
       </div>
+
+      <h2>Atendimento humano</h2>
+      <div class="cartao" id="pausados"><p class="vazio">Carregando...</p></div>
 
       <h2>Agenda</h2>
       <div class="cartao" id="tarefas"><p class="vazio">Carregando...</p></div>
@@ -419,6 +432,39 @@
         }
       });
 
+      function pintarPausados(pausados) {
+        if (!pausados?.length) {
+          $("pausados").innerHTML =
+            '<p class="vazio">Nenhuma conversa pausada. O bot cala sozinho quando alguém responde pelo celular, ou com <code>#pausar</code> no chat.</p>';
+          return;
+        }
+
+        $("pausados").innerHTML = pausados
+          .map(
+            (p) => `<div class="pausado">
+                <span class="ponto off"></span>
+                <span>
+                  <span class="numero">${escapar(p.telefone)}</span><br />
+                  <span class="prazo">${
+                    p.minutosRestantes === null
+                      ? "sem prazo, até retomar"
+                      : `volta em ${p.minutosRestantes} min`
+                  }</span>
+                </span>
+                <button data-retomar="${escapar(p.telefone)}">Devolver ao bot</button>
+              </div>`,
+          )
+          .join("");
+      }
+
+      $("pausados").addEventListener("click", async (ev) => {
+        const telefone = ev.target.dataset?.retomar;
+        if (!telefone) return;
+        ev.target.disabled = true;
+        await fetch(`/api/atendimento/${encodeURIComponent(telefone)}/retomar`, { method: "POST" });
+        atualizar();
+      });
+
       function pintarEventos(eventos) {
         if (!eventos?.length) {
           $("eventos").innerHTML = '<p class="vazio">Nada ainda. Manda uma mensagem para o bot.</p>';
@@ -460,6 +506,7 @@
             contatos = estado.contatos;
             $("contatosDisparo").innerHTML = chipsDeContatos();
           }
+          pintarPausados(estado.pausados);
           pintarTarefas(estado.tarefas);
           pintarEventos(estado.eventos);
           if (primeiraCarga && estado.numeroTeste && !$("telefone").value) {
@@ -482,6 +529,18 @@
       $("prontas").addEventListener("click", (ev) => {
         const i = ev.target.dataset?.i;
         if (i != null) $("texto").value = PRONTAS[i];
+      });
+
+      $("pausarConversa").addEventListener("click", async () => {
+        const telefone = $("telefone").value.trim();
+        if (!telefone) return;
+        // Sem minutos = sem prazo: quem assumiu decide quando devolver.
+        await fetch(`/api/atendimento/${encodeURIComponent(telefone)}/pausar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        atualizar();
       });
 
       $("enviar").addEventListener("click", async () => {

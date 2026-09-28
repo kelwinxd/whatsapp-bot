@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { writeFile } from "node:fs/promises";
 import { resolverHorario, descreverHorario, decomporHorario } from "./horarios.js";
+import { normalizarTelefones as normalizar } from "./telefone.js";
 
 // Mensagens que o bot manda por conta própria, na hora marcada — o inverso do
 // resto do projeto, que só reage a webhook. Cada tarefa é uma linha do
@@ -16,9 +17,7 @@ const LIMITE_DA_FONTE = 4_000; // caracteres enviados ao modelo
 // ("telefones": ["55...", "55..."], ou a mesma string separada por vírgula).
 // Tudo vira uma lista de números só com dígitos.
 export function normalizarTelefones(tarefa = {}) {
-  const bruto = tarefa.telefones ?? tarefa.telefone ?? [];
-  const lista = Array.isArray(bruto) ? bruto : String(bruto).split(/[,;]/);
-  return lista.map((n) => String(n).replace(/\D/g, "")).filter(Boolean);
+  return normalizar(tarefa.telefones ?? tarefa.telefone ?? []);
 }
 
 export class Agenda {
