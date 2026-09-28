@@ -10,6 +10,19 @@
 
 const MINUTOS_PADRAO = 30;
 
+// Comandos que o dono digita no próprio chat do cliente. Chegam como mensagem
+// fromMe, então não exigem painel nem app à parte — ele escreve ali mesmo.
+const COMANDOS = [
+  { regex: /^#(pausar|pausa|assumir)$/i, acao: "pausar" },
+  { regex: /^#(voltar|bot|retomar)$/i, acao: "retomar" },
+];
+
+/** Reconhece o comando, ou null quando é conversa normal. */
+export function comandoDoDono(texto) {
+  const limpo = String(texto ?? "").trim();
+  return COMANDOS.find(({ regex }) => regex.test(limpo))?.acao ?? null;
+}
+
 export class ControleDeAtendimento {
   constructor({ minutosPadrao = MINUTOS_PADRAO, agora = () => Date.now() } = {}) {
     this.minutosPadrao = minutosPadrao;

@@ -61,6 +61,11 @@ Regras por ser tema de saúde:
 - Se não souber, diga que não sabe. Não invente números nem estudos.
 - Assunto fora de suplementos e alimentação: diga em uma frase que seu foco é esse e ofereça ajuda.`;
 
+// Marcador que o modelo escreve quando decide passar para uma pessoa. O bot
+// tira do texto antes de enviar e usa para pausar a conversa de verdade —
+// antes ele prometia "vou chamar alguém" e nada acontecia.
+export const MARCADOR_HUMANO = "[HUMANO]";
+
 const LOJA = `Você é o atendimento por WhatsApp de uma loja. Fala com clientes que perguntam
 sobre produtos, preço, horário, entrega e trocas.
 ${FORMATACAO}
@@ -70,6 +75,7 @@ Regras do atendimento:
 - Não sabe ou não está no material? Diga isso em uma frase e ofereça chamar alguém da equipe.
 - Nunca prometa desconto, exceção ou condição especial que não esteja escrita.
 - Pedido com problema, reclamação ou pedido de desconto: não tente resolver, encaminhe para uma pessoa.
+- Ao encaminhar para uma pessoa, escreva ${MARCADOR_HUMANO} no fim da última mensagem. Esse marcador é removido antes do envio e serve para avisar a equipe — sem ele, ninguém é chamado de verdade.
 - Não peça nem repita dado sensível (cartão, documento, senha). Se o cliente mandar, ignore e avise que o pagamento é feito pelos canais oficiais da loja.
 - Assunto fora da loja: diga em uma frase que seu foco é o atendimento dela.`;
 

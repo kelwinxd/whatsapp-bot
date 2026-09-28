@@ -10,7 +10,7 @@ import { montarPromptDeSistema, perfisDisponiveis } from "./src/core/prompt.js";
 import { montarDocumento, resumoParaPrompt, contarRespostas, apresentacaoDaLoja } from "./src/core/formularioLoja.js";
 import { Lojas, gerarSlug, nomeDoDocumento } from "./src/core/lojas.js";
 import { separarPerfil } from "./src/core/prompt.js";
-import { ControleDeAtendimento, IdsEnviados } from "./src/core/atendimento.js";
+import { ControleDeAtendimento, IdsEnviados, comandoDoDono } from "./src/core/atendimento.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -1546,4 +1546,84 @@ test("resposta humana pelo celular pausa o bot naquela conversa", async () => {
   bot.atendimento.retomar("5519999999999");
   await bot.processarWebhook(webhook("ainda está aí?"));
   assert.equal(enviadas.length, 3);
+});
+
+test("comandoDoDono reconhece só os comandos", () => {
+  assert.equal(comandoDoDono("#pausar"), "pausar");
+  assert.equal(comandoDoDono("#PAUSA"), "pausar");
+  assert.equal(comandoDoDono("#assumir"), "pausar");
+  assert.equal(comandoDoDono("#voltar"), "retomar");
+  assert.equal(comandoDoDono("#bot"), "retomar");
+  // Conversa normal não vira comando.
+  assert.equal(comandoDoDono("vou pausar o pedido"), null);
+  assert.equal(comandoDoDono("#pausar por favor"), null);
+  assert.equal(comandoDoDono(""), null);
+});
+
+test("#pausar e #voltar controlam a conversa pelo próprio chat", async () => {
+  const { bot, enviadas, metricas } = montarBotComHandoff();
+
+  await bot.processarWebhook({ ...webhook("#pausar", { fromMe: true }), messageId: "CMD1" });
+  assert.equal(bot.atendimento.estaPausado("5519999999999"), true);
+  // Sem prazo: não expira sozinho.
+  assert.equal(bot.atendimento.listar()[0].minutosRestantes, null);
+
+  await bot.processarWebhook(webhook("tem no tamanho M?"));
+  assert.equal(enviadas.length, 0);
+
+  await bot.processarWebhook({ ...webhook("#voltar", { fromMe: true }), messageId: "CMD2" });
+  assert.equal(bot.atendimento.estaPausado("5519999999999"), false);
+
+  await bot.processarWebhook(webhook("tem no tamanho M?"));
+  assert.equal(enviadas.length, 1);
+
+  // Mais recente primeiro: a mensagem que chegou durante a pausa entra como
+  // ignorada.
+  assert.deepEqual(metricas.eventos.map((e) => e.tipo), [
+    "respondida",
+    "retomada",
+    "ignorada",
+    "pausada",
+  ]);
+});
+
+test("o marcador [HUMANO] pausa, avisa a equipe e não vaza para o cliente", async () => {
+  const enviadas = [];
+  const metricas = new Metricas();
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async (p) => { enviadas.push(p); return { id: `ID${enviadas.length}` }; },
+    },
+    ia: {
+      nome: "falsa",
+      responder: async () => "Vou chamar alguém da equipe pra te ajudar com isso. [HUMANO]",
+    },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    metricas,
+    avisarEm: "5511977776666",
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.processarWebhook(webhook("o pedido chegou errado, quero reclamar"));
+
+  // Cliente recebe a mensagem sem o marcador.
+  const paraCliente = enviadas.find((e) => e.telefone === "5519999999999");
+  assert.equal(paraCliente.texto, "Vou chamar alguém da equipe pra te ajudar com isso.");
+  assert.doesNotMatch(paraCliente.texto, /HUMANO/);
+
+  // Equipe recebe o aviso com o contexto.
+  const paraEquipe = enviadas.find((e) => e.telefone === "5511977776666");
+  assert.match(paraEquipe.texto, /Atendimento pedido por Kelwin \(5519999999999\)/);
+  assert.match(paraEquipe.texto, /o pedido chegou errado/);
+
+  // E a conversa fica pausada até alguém retomar.
+  assert.equal(bot.atendimento.estaPausado("5519999999999"), true);
+  const pausa = metricas.eventos.find((e) => e.tipo === "pausada");
+  assert.equal(pausa.motivo, "bot encaminhou para uma pessoa (equipe avisada)");
+
+  await bot.processarWebhook(webhook("alô?"));
+  assert.equal(enviadas.filter((e) => e.telefone === "5519999999999").length, 1);
 });

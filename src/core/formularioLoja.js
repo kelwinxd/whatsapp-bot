@@ -70,6 +70,7 @@ export const PERGUNTAS = [
       { id: "tomAtendimento", rotulo: "Como o bot deve falar?", tipo: "texto", exemplo: "Informal, tratando por você, com emoji ocasional" },
       { id: "quandoChamarHumano", rotulo: "Quando ele deve chamar uma pessoa?", tipo: "longo", exemplo: "Reclamação, pedido com problema, orçamento acima de R$ 500 ou pedido de desconto" },
       { id: "contatoHumano", rotulo: "Como avisar que uma pessoa vai atender?", tipo: "texto", exemplo: "Vou chamar alguém da equipe, responde aqui em alguns minutos" },
+      { id: "telefoneResponsavel", rotulo: "Telefone de quem recebe o aviso de atendimento", tipo: "texto", exemplo: "5519999999999" },
       { id: "perguntasFrequentes", rotulo: "Perguntas frequentes e as respostas (uma por linha, no formato pergunta | resposta)", tipo: "longo", exemplo: "Vocês têm produto sem lactose? | Sim, temos linha sem lactose e sem glúten.\nAceitam encomenda? | Sim, com 50% de entrada." },
     ],
   },

@@ -1,7 +1,12 @@
-import { montarPromptDeSistema, separarPerfil, SEPARADOR_DE_MENSAGENS } from "./prompt.js";
+import {
+  montarPromptDeSistema,
+  separarPerfil,
+  SEPARADOR_DE_MENSAGENS,
+  MARCADOR_HUMANO,
+} from "./prompt.js";
 import { nomeDoDocumento } from "./lojas.js";
 import { apresentacaoDaLoja } from "./formularioLoja.js";
-import { ControleDeAtendimento, IdsEnviados } from "./atendimento.js";
+import { ControleDeAtendimento, IdsEnviados, comandoDoDono } from "./atendimento.js";
 import { metricasNulas } from "./Metricas.js";
 import { custoDeTexto, custoDeTranscricao, somar } from "./billing.js";
 
@@ -67,6 +72,8 @@ export class BotService {
     ritmo = {},
     imagem = { detalhe: "auto" },
     atendimento = new ControleDeAtendimento(),
+    // Número que recebe o aviso quando o bot encaminha para uma pessoa.
+    avisarEm = null,
     logger = console,
     // Injetáveis para o teste não depender de sorteio nem esperar de verdade.
     aleatorio = Math.random,
@@ -82,6 +89,7 @@ export class BotService {
     this.ritmo = { ...RITMO_PADRAO, ...ritmo };
     this.imagem = imagem;
     this.atendimento = atendimento;
+    this.avisarEm = avisarEm;
     this.idsEnviados = new IdsEnviados();
     this.logger = logger;
     this.aleatorio = aleatorio;
@@ -118,18 +126,24 @@ export class BotService {
   // loja e busca na base inteira.
   async lojaAtiva() {
     const { slug } = separarPerfil(this.prompt.perfil);
-    if (!slug) return { resumo: null, documentos: undefined, apresentacao: null };
+    if (!slug) return { resumo: null, documentos: undefined, apresentacao: null, responsavel: null };
 
     const loja = this.lojas ? await this.lojas.obter(slug) : null;
     if (!loja) {
       this.logger.error(`❌ Perfil "${this.prompt.perfil}": loja "${slug}" não cadastrada`);
-      return { resumo: null, documentos: [nomeDoDocumento(slug)], apresentacao: null };
+      return {
+        resumo: null,
+        documentos: [nomeDoDocumento(slug)],
+        apresentacao: null,
+        responsavel: null,
+      };
     }
 
     return {
       resumo: loja.resumo,
       documentos: [loja.documento],
       apresentacao: apresentacaoDaLoja(loja.respostas),
+      responsavel: String(loja.respostas.telefoneResponsavel ?? "").replace(/\D/g, "") || null,
     };
   }
 
@@ -200,6 +214,30 @@ export class BotService {
   tratarMensagemPropria(mensagem) {
     if (this.idsEnviados.contem(mensagem.id)) {
       return { tratada: false, motivo: "mensagem enviada pelo próprio bot" };
+    }
+
+    // "#pausar" e "#voltar" digitados no chat do cliente: o dono comanda de
+    // onde ele já está, sem abrir painel.
+    const comando = comandoDoDono(mensagem.texto);
+    if (comando === "pausar") {
+      this.atendimento.pausar(mensagem.telefone, null);
+      this.metricas.registrar({
+        tipo: "pausada",
+        telefone: mensagem.telefone,
+        motivo: "#pausar: sem prazo, até #voltar",
+      });
+      this.logger.log(`🙋 ${mensagem.telefone}: pausado por comando, até #voltar`);
+      return { tratada: false, motivo: "pausado por comando" };
+    }
+    if (comando === "retomar") {
+      this.atendimento.retomar(mensagem.telefone);
+      this.metricas.registrar({
+        tipo: "retomada",
+        telefone: mensagem.telefone,
+        motivo: "#voltar: bot reassumiu",
+      });
+      this.logger.log(`🤖 ${mensagem.telefone}: bot reassumiu por comando`);
+      return { tratada: false, motivo: "retomado por comando" };
     }
 
     const { expiraEm } = this.atendimento.pausar(mensagem.telefone);
@@ -281,6 +319,43 @@ export class BotService {
     const resultado = await this.whatsapp.enviarTexto({ telefone, texto, digitandoMs });
     this.idsEnviados.registrar(resultado?.id);
     return resultado;
+  }
+
+  // Separa o marcador de encaminhamento do texto que vai para o cliente. O
+  // modelo escreve [HUMANO] quando decide chamar alguém; isso não pode
+  // aparecer na mensagem.
+  separarEncaminhamento(resposta) {
+    const pedeHumano = resposta.includes(MARCADOR_HUMANO);
+    const limpa = pedeHumano
+      ? resposta.split(MARCADOR_HUMANO).join("").replace(/[ \t]+\n/g, "\n").trim()
+      : resposta;
+    return { texto: limpa, pedeHumano };
+  }
+
+  // Avisa quem atende que a conversa precisa de uma pessoa. Sem isso o
+  // encaminhamento seria só uma promessa ao cliente.
+  async avisarEquipe({ telefone, nome, pergunta }) {
+    // Preferência para o telefone cadastrado na loja; avisarEm é o padrão
+    // global, útil quando não há loja (ou ela não preencheu).
+    const daLoja = (await this.lojaAtiva()).responsavel;
+    const destino = daLoja ?? this.avisarEm;
+    if (!destino) return false;
+
+    const aviso = [
+      `🙋 Atendimento pedido por ${nome ?? "cliente"} (${telefone})`,
+      pergunta ? `Última mensagem: "${pergunta}"` : null,
+      "Responda direto na conversa dele; eu fico fora até você terminar.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    try {
+      await this.enviar({ telefone: destino, texto: aviso, digitandoMs: 1000 });
+      return true;
+    } catch (erro) {
+      this.logger.error("❌ Falha ao avisar a equipe:", erro);
+      return false;
+    }
   }
 
   // Envia a resposta em partes. Sequencial de propósito: a Evolution só envia
@@ -430,7 +505,22 @@ export class BotService {
       await this.conversas.acrescentar(telefone, { role: "assistant", content: resposta });
 
       const antesDoEnvio = Date.now();
-      const partes = await this.enviarPartes(telefone, resposta);
+      const { texto: paraEnviar, pedeHumano } = this.separarEncaminhamento(resposta);
+      const partes = await this.enviarPartes(telefone, paraEnviar);
+
+      // Encaminhou: pausa de verdade e chama a equipe.
+      if (pedeHumano) {
+        this.atendimento.pausar(telefone, null);
+        const avisou = await this.avisarEquipe({ telefone, nome, pergunta: texto });
+        this.metricas.registrar({
+          tipo: "pausada",
+          telefone,
+          motivo: avisou
+            ? "bot encaminhou para uma pessoa (equipe avisada)"
+            : "bot encaminhou para uma pessoa (sem número de aviso configurado)",
+        });
+        this.logger.log(`🙋 ${telefone}: encaminhado para atendimento humano`);
+      }
 
       this.metricas.registrar({
         tipo: "respondida",
