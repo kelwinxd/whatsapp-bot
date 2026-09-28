@@ -1,6 +1,7 @@
 import { montarPromptDeSistema, separarPerfil, SEPARADOR_DE_MENSAGENS } from "./prompt.js";
 import { nomeDoDocumento } from "./lojas.js";
 import { apresentacaoDaLoja } from "./formularioLoja.js";
+import { ControleDeAtendimento, IdsEnviados } from "./atendimento.js";
 import { metricasNulas } from "./Metricas.js";
 import { custoDeTexto, custoDeTranscricao, somar } from "./billing.js";
 
@@ -65,6 +66,7 @@ export class BotService {
     metricas = metricasNulas,
     ritmo = {},
     imagem = { detalhe: "auto" },
+    atendimento = new ControleDeAtendimento(),
     logger = console,
     // Injetáveis para o teste não depender de sorteio nem esperar de verdade.
     aleatorio = Math.random,
@@ -79,6 +81,8 @@ export class BotService {
     this.metricas = metricas;
     this.ritmo = { ...RITMO_PADRAO, ...ritmo };
     this.imagem = imagem;
+    this.atendimento = atendimento;
+    this.idsEnviados = new IdsEnviados();
     this.logger = logger;
     this.aleatorio = aleatorio;
     this.dormir = dormir;
@@ -88,7 +92,7 @@ export class BotService {
   async enviarManual({ telefone, texto }) {
     const inicio = Date.now();
     try {
-      await this.whatsapp.enviarTexto({ telefone, texto, digitandoMs: this.digitandoMs(texto) });
+      await this.enviar({ telefone, texto, digitandoMs: this.digitandoMs(texto) });
       this.metricas.registrar({
         tipo: "envio-manual",
         telefone,
@@ -184,14 +188,37 @@ export class BotService {
   // Quais mensagens o bot ignora. Fora daqui para ficar explícito e fácil de
   // mudar (liberar grupos, por exemplo).
   deveIgnorar(mensagem) {
-    if (mensagem.minha) return "mensagem enviada pelo próprio bot";
     if (mensagem.grupo) return "mensagem de grupo";
+    // Alguém da equipe está conduzindo esta conversa: o bot fica fora até a
+    // pausa expirar. Dois respondendo a mesma coisa é pior que demorar.
+    if (this.atendimento.estaPausado(mensagem.telefone)) return "atendimento humano em andamento";
     return null;
+  }
+
+  // Mensagem com fromMe que não saiu daqui = alguém digitou no celular. O bot
+  // então cala nessa conversa e volta sozinho depois.
+  tratarMensagemPropria(mensagem) {
+    if (this.idsEnviados.contem(mensagem.id)) {
+      return { tratada: false, motivo: "mensagem enviada pelo próprio bot" };
+    }
+
+    const { expiraEm } = this.atendimento.pausar(mensagem.telefone);
+    const minutos = this.atendimento.minutosPadrao;
+    this.metricas.registrar({
+      tipo: "pausada",
+      telefone: mensagem.telefone,
+      motivo: `resposta humana detectada; bot pausado por ${minutos} min`,
+      expiraEm,
+    });
+    this.logger.log(`🙋 ${mensagem.telefone}: humano assumiu, bot pausado por ${minutos} min`);
+    return { tratada: false, motivo: "humano assumiu a conversa" };
   }
 
   async processarWebhook(corpo) {
     const mensagem = this.whatsapp.interpretarWebhook(corpo);
     if (!mensagem) return { tratada: false, motivo: "payload sem texto" };
+
+    if (mensagem.minha) return this.tratarMensagemPropria(mensagem);
 
     const ignorar = this.deveIgnorar(mensagem);
     if (ignorar) {
@@ -248,6 +275,14 @@ export class BotService {
     };
   }
 
+  // Todo envio passa por aqui, para o id ficar registrado: é assim que o
+  // webhook distingue a mensagem do bot da que a pessoa digitou no celular.
+  async enviar({ telefone, texto, digitandoMs }) {
+    const resultado = await this.whatsapp.enviarTexto({ telefone, texto, digitandoMs });
+    this.idsEnviados.registrar(resultado?.id);
+    return resultado;
+  }
+
   // Envia a resposta em partes. Sequencial de propósito: a Evolution só envia
   // depois do "digitando...", então esperar cada uma é o que cria o ritmo de
   // conversa. Em paralelo, as mensagens chegariam juntas e fora de ordem.
@@ -257,11 +292,7 @@ export class BotService {
     for (const [indice, parte] of partes.entries()) {
       // Antes da primeira não cabe pausa: a espera da IA já fez esse papel.
       if (indice > 0) await this.dormir(this.ritmo.pausaMs);
-      await this.whatsapp.enviarTexto({
-        telefone,
-        texto: parte,
-        digitandoMs: this.digitandoMs(parte),
-      });
+      await this.enviar({ telefone, texto: parte, digitandoMs: this.digitandoMs(parte) });
     }
 
     return partes;
@@ -339,9 +370,9 @@ export class BotService {
 
     if (midia && !MIDIA_SUPORTADA.has(midia.tipo)) {
       const aviso = AVISO_POR_TIPO[midia.tipo] ?? "Ainda não consigo abrir esse tipo de arquivo 😅";
-      await this.whatsapp
-        .enviarTexto({ telefone, texto: aviso, digitandoMs: this.digitandoMs(aviso) })
-        .catch((e) => this.logger.error("❌ Falha ao avisar sobre a mídia:", e));
+      await this.enviar({ telefone, texto: aviso, digitandoMs: this.digitandoMs(aviso) }).catch(
+        (e) => this.logger.error("❌ Falha ao avisar sobre a mídia:", e),
+      );
       const motivo = `mídia não suportada: ${midia.tipo}`;
       this.metricas.registrar({ tipo: "ignorada", telefone, motivo });
       return { tratada: false, motivo };
@@ -355,7 +386,7 @@ export class BotService {
 
       // Áudio sem fala reconhecível: avisa em vez de mandar vazio para a IA.
       if (vazio) {
-        await this.whatsapp.enviarTexto({
+        await this.enviar({
           telefone,
           texto: AUDIO_SEM_FALA,
           digitandoMs: this.digitandoMs(AUDIO_SEM_FALA),
@@ -432,9 +463,9 @@ export class BotService {
       });
       // Silêncio é o pior resultado para quem está do outro lado: avisa que
       // deu errado, mas sem deixar uma falha no aviso derrubar o fluxo.
-      await this.whatsapp
-        .enviarTexto({ telefone, texto: ERRO_AO_RESPONDER })
-        .catch((e) => this.logger.error("❌ Falha também no aviso de erro:", e));
+      await this.enviar({ telefone, texto: ERRO_AO_RESPONDER }).catch((e) =>
+        this.logger.error("❌ Falha também no aviso de erro:", e),
+      );
       return { tratada: false, motivo: "erro", erro };
     }
   }

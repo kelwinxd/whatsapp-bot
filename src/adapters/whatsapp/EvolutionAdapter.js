@@ -85,6 +85,7 @@ export class EvolutionAdapter extends ProvedorWhatsApp {
     const jid = chave.remoteJid ?? "";
 
     return {
+      id: chave.id ?? null,
       telefone: soDigitos(jid),
       nome: dado.pushName || "amigo",
       texto,
@@ -142,6 +143,10 @@ export class EvolutionAdapter extends ProvedorWhatsApp {
     if (!resposta.ok) {
       throw new Error(`Evolution respondeu ${resposta.status}: ${await resposta.text()}`);
     }
-    return resposta.json();
+
+    // O id volta para o bot reconhecer, no webhook, a mensagem que ele mesmo
+    // enviou — é o que distingue isso de alguém digitando no celular.
+    const dados = await resposta.json();
+    return { id: dados?.key?.id ?? null, bruto: dados };
   }
 }

@@ -55,6 +55,7 @@ export class ZapiAdapter extends ProvedorWhatsApp {
     if (!texto && !midia) return null;
 
     return {
+      id: corpo.messageId ?? corpo.id ?? null,
       telefone: corpo.phone,
       nome: corpo.senderName || corpo.chatName || "amigo",
       texto,
@@ -97,6 +98,8 @@ export class ZapiAdapter extends ProvedorWhatsApp {
     if (!resposta.ok) {
       throw new Error(`Z-API respondeu ${resposta.status}: ${await resposta.text()}`);
     }
-    return resposta.json();
+
+    const dados = await resposta.json();
+    return { id: dados?.messageId ?? dados?.id ?? null, bruto: dados };
   }
 }

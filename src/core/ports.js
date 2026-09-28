@@ -13,6 +13,7 @@
  * payload do seu provedor para este formato — é o "idioma" interno do bot.
  *
  * @typedef {object} MensagemRecebida
+ * @property {string|null} id  Id da mensagem no provedor
  * @property {string} telefone  Só dígitos, com DDI (ex.: 5519999999999)
  * @property {string} nome      Nome exibido pelo contato
  * @property {string} texto     Conteúdo da mensagem
@@ -57,6 +58,8 @@ export class ProvedorWhatsApp {
    * cada adaptador converte para a unidade que a sua API usa.
    *
    * @param {{ telefone: string, texto: string, digitandoMs?: number }} params
+   * @returns {Promise<{ id: string|null }>} O id serve para o bot reconhecer,
+   *   no webhook, a mensagem que ele mesmo enviou.
    */
   async enviarTexto(params) {
     throw new Error(`${this.nome} não implementou enviarTexto()`);

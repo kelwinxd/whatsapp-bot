@@ -10,6 +10,7 @@ import { montarPromptDeSistema, perfisDisponiveis } from "./src/core/prompt.js";
 import { montarDocumento, resumoParaPrompt, contarRespostas, apresentacaoDaLoja } from "./src/core/formularioLoja.js";
 import { Lojas, gerarSlug, nomeDoDocumento } from "./src/core/lojas.js";
 import { separarPerfil } from "./src/core/prompt.js";
+import { ControleDeAtendimento, IdsEnviados } from "./src/core/atendimento.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -52,9 +53,12 @@ test("Z-API e Evolution produzem a mesma mensagem normalizada", () => {
     },
   });
 
-  const semBruto = ({ bruto, ...resto }) => resto;
-  assert.deepEqual(semBruto(daZapi), semBruto(daEvolution));
+  // id e bruto ficam de fora: são o que cada provedor tem de próprio.
+  const semProvedor = ({ bruto, id, ...resto }) => resto;
+  assert.deepEqual(semProvedor(daZapi), semProvedor(daEvolution));
   assert.equal(daZapi.telefone, "5519999999999");
+  // Mas o id é lido de onde cada um o põe.
+  assert.equal(daEvolution.id, "ABC");
 });
 
 test("Evolution: extendedTextMessage, grupo e eventos ignorados", () => {
@@ -1439,4 +1443,107 @@ test("o bot se apresenta uma vez por conversa, e por contato", async () => {
 
   await rm(lojas.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });
+});
+
+// --- Atendimento humano (handoff) ------------------------------------------
+
+test("ControleDeAtendimento pausa, expira e retoma", () => {
+  let agora = 0;
+  const controle = new ControleDeAtendimento({ minutosPadrao: 30, agora: () => agora });
+
+  assert.equal(controle.estaPausado("551"), false);
+
+  controle.pausar("551");
+  assert.equal(controle.estaPausado("551"), true);
+  assert.equal(controle.listar()[0].minutosRestantes, 30);
+
+  // 29 minutos depois ainda está pausado; 31, não.
+  agora = 29 * 60_000;
+  assert.equal(controle.estaPausado("551"), true);
+  agora = 31 * 60_000;
+  assert.equal(controle.estaPausado("551"), false);
+  // A pausa expirada sai do mapa na leitura, sem rotina de varredura.
+  assert.deepEqual(controle.listar(), []);
+
+  // Sem prazo: fica até alguém retomar.
+  controle.pausar("552", null);
+  agora = 999 * 60_000;
+  assert.equal(controle.estaPausado("552"), true);
+  assert.equal(controle.listar()[0].minutosRestantes, null);
+  assert.equal(controle.retomar("552"), true);
+  assert.equal(controle.estaPausado("552"), false);
+});
+
+test("IdsEnviados reconhece o que o bot mandou, e esquece o antigo", () => {
+  let agora = 0;
+  const ids = new IdsEnviados({ validadeMs: 60_000, agora: () => agora });
+
+  ids.registrar("ABC");
+  assert.equal(ids.contem("ABC"), true);
+  assert.equal(ids.contem("XYZ"), false);
+  assert.equal(ids.contem(null), false);
+
+  agora = 61_000;
+  assert.equal(ids.contem("ABC"), false);
+});
+
+function montarBotComHandoff() {
+  const enviadas = [];
+  let proximoId = 1;
+  const metricas = new Metricas();
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      // Devolve id como os adaptadores de verdade fazem.
+      enviarTexto: async (p) => {
+        const id = `BOT${proximoId++}`;
+        enviadas.push({ ...p, id });
+        return { id };
+      },
+    },
+    ia: { nome: "falsa", responder: async () => "resposta do bot" },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    metricas,
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+  return { bot, enviadas, metricas };
+}
+
+test("resposta humana pelo celular pausa o bot naquela conversa", async () => {
+  const { bot, enviadas, metricas } = montarBotComHandoff();
+
+  await bot.processarWebhook(webhook("oi"));
+  assert.equal(enviadas.length, 1);
+
+  // O eco da própria mensagem do bot não pode pausá-lo.
+  const eco = { ...webhook("resposta do bot", { fromMe: true }), messageId: enviadas[0].id };
+  const r1 = await bot.processarWebhook(eco);
+  assert.match(r1.motivo, /próprio bot/);
+  assert.equal(bot.atendimento.estaPausado("5519999999999"), false);
+
+  // Agora uma mensagem fromMe com id desconhecido: foi digitada no celular.
+  const r2 = await bot.processarWebhook({
+    ...webhook("oi, aqui é a Sara, vou te ajudar", { fromMe: true }),
+    messageId: "DIGITADA_NO_CELULAR",
+  });
+  assert.match(r2.motivo, /humano assumiu/);
+  assert.equal(bot.atendimento.estaPausado("5519999999999"), true);
+  assert.equal(metricas.eventos[0].tipo, "pausada");
+
+  // Cliente escreve de novo: o bot não responde.
+  const r3 = await bot.processarWebhook(webhook("e tem no tamanho M?"));
+  assert.equal(r3.tratada, false);
+  assert.match(r3.motivo, /atendimento humano/);
+  assert.equal(enviadas.length, 1); // nada novo foi enviado
+
+  // Outra conversa segue normal: a pausa é por contato.
+  await bot.processarWebhook({ ...webhook("oi"), phone: "5511988887777" });
+  assert.equal(enviadas.length, 2);
+
+  // Depois de retomar, volta a responder.
+  bot.atendimento.retomar("5519999999999");
+  await bot.processarWebhook(webhook("ainda está aí?"));
+  assert.equal(enviadas.length, 3);
 });
