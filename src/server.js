@@ -1,6 +1,6 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
-import { perfisDisponiveis } from "./core/prompt.js";
+import { perfisDisponiveis, separarPerfil } from "./core/prompt.js";
 import { vocabulario } from "./core/horarios.js";
 import { normalizarTelefone } from "./core/telefone.js";
 import { PERGUNTAS, montarDocumento, contarRespostas } from "./core/formularioLoja.js";
@@ -16,6 +16,7 @@ export function criarServidor({
   agenda,
   base,
   lojas = null,
+  aoTrocarPerfil = async () => {},
   config = {},
   logger = console,
 }) {
@@ -105,6 +106,37 @@ export function criarServidor({
       logger.error("❌ Erro ao executar tarefa:", erro);
       res.status(400).json({ erro: erro.message });
     }
+  });
+
+  // --- Perfil ativo ---
+  // Lista o que dá para escolher: os perfis fixos e um por loja cadastrada.
+  app.get("/api/perfis", async (_req, res) => {
+    const cadastradas = lojas ? await lojas.listar() : [];
+    res.json({
+      ativo: bot.prompt.perfil,
+      fixos: perfisDisponiveis,
+      lojas: cadastradas.map((l) => ({ perfil: l.perfil, nome: l.nome })),
+    });
+  });
+
+  // Troca o perfil em uso, sem reiniciar, e guarda a escolha.
+  app.put("/api/perfil", async (req, res) => {
+    const perfil = String(req.body?.perfil ?? "").trim();
+    const { perfil: base_, slug } = separarPerfil(perfil);
+
+    if (!perfisDisponiveis.includes(base_)) {
+      return res.status(400).json({ erro: `perfil desconhecido: "${perfil}"` });
+    }
+    // Perfil de loja só vale se a loja existir — senão o bot atenderia sem
+    // dado nenhum e ninguém saberia por quê.
+    if (slug && !(await lojas?.obter(slug))) {
+      return res.status(400).json({ erro: `loja "${slug}" não cadastrada` });
+    }
+
+    bot.prompt.perfil = perfil;
+    await aoTrocarPerfil(perfil);
+    logger.log(`💬 Perfil trocado para ${perfil}`);
+    res.json({ perfil });
   });
 
   // --- Atendimento humano ---

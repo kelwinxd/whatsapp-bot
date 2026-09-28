@@ -214,6 +214,21 @@ marcador, os dois formatos são aceitos.
 Controle em `RESPOSTA_MAX_MENSAGENS` (1 volta ao comportamento de mensagem
 única). O excedente é juntado na última mensagem, nunca descartado.
 
+## Trocando o perfil pelo painel
+
+O select no topo do painel troca o perfil em uso **sem reiniciar**: os fixos
+(`suplementos`, `whatsapp`, `loja`, `puro`) e um por loja cadastrada. A
+próxima mensagem já usa o novo.
+
+A escolha é gravada em `dados/preferencias.json` e **vence o `PROMPT_PERFIL`
+do `.env`** — sem isso, trocar no painel e reiniciar voltaria calado ao valor
+antigo. Para voltar a mandar pelo `.env`, apague o arquivo.
+
+Perfil de loja inexistente é recusado (`loja "x" não cadastrada`), em vez de
+atender sem dado nenhum.
+
+Rotas: `GET /api/perfis` e `PUT /api/perfil`.
+
 ## Atendimento humano (handoff)
 
 O bot sai da frente quando uma pessoa assume a conversa. Três gatilhos:

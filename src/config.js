@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
+import { carregarPreferencias } from "./core/preferencias.js";
 
 // Ponto único de leitura de variáveis de ambiente. Nenhum outro arquivo lê
 // process.env: assim dá para ver de relance tudo que o projeto precisa, e
@@ -47,7 +48,13 @@ function lerContatos(bruto, numeroTeste) {
   return contatos;
 }
 
+const ARQUIVO_DE_PREFERENCIAS = process.env.PREFERENCIAS_ARQUIVO ?? "dados/preferencias.json";
+// O que foi escolhido no painel vence o .env: é a ação mais recente e
+// explícita de quem está operando.
+const preferencias = carregarPreferencias(ARQUIVO_DE_PREFERENCIAS);
+
 export const config = {
+  preferenciasArquivo: ARQUIVO_DE_PREFERENCIAS,
   porta: Number(process.env.PORT ?? 3000),
 
   // Qual implementação de cada porta usar. É aqui que se troca de tecnologia.
@@ -141,8 +148,8 @@ export const config = {
   },
 
   prompt: {
-    // suplementos | whatsapp | puro (ver src/core/prompt.js)
-    perfil: process.env.PROMPT_PERFIL ?? "suplementos",
+    // loja_<slug> | loja | suplementos | whatsapp | puro (ver src/core/prompt.js)
+    perfil: preferencias.perfil ?? process.env.PROMPT_PERFIL ?? "suplementos",
     // Tamanho pedido no prompt. 0 desliga a instrução de brevidade.
     limitePalavras: Number(process.env.RESPOSTA_MAX_PALAVRAS ?? 60) || null,
     // Quantas mensagens o bot pode mandar por resposta (1 = mensagem única).

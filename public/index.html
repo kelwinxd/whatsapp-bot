@@ -33,6 +33,9 @@
       .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
       .metrica .valor { font-size: 22px; font-weight: 600; }
       .metrica .rotulo { color: var(--apagado); font-size: 12px; }
+      .trocaPerfil { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+      .trocaPerfil select { width: auto; min-width: 220px; }
+      .trocaPerfil .aviso { font-size: 13px; }
       .etiqueta { display: inline-flex; align-items: center; gap: 6px; background: #1e222b; border: 1px solid var(--borda); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--apagado); }
       .ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--apagado); }
       .ponto.on { background: var(--verde); }
@@ -121,6 +124,12 @@
 
       <div class="linha" id="etiquetas"></div>
 
+      <div class="trocaPerfil">
+        <label for="perfil" class="rotulo" style="font-size:13px;color:var(--apagado)">Perfil:</label>
+        <select id="perfil"></select>
+        <span class="aviso" id="avisoPerfil"></span>
+      </div>
+
       <h2>Métricas</h2>
       <div class="grade" id="metricas"></div>
 
@@ -202,6 +211,7 @@
       // que esta sendo digitado: enquanto houver edicao pendente, a secao nao
       // e redesenhada.
       let contatos = [];
+      let perfilCarregado = false;
       let agendaSuja = false;
       let vocabulario = { horas: [], dias: [], frequencias: [] };
 
@@ -497,6 +507,46 @@
 
       let primeiraCarga = true;
 
+      // O select do perfil é montado uma vez; depois só acompanha o ativo, para
+      // não trocar a opção embaixo de quem está escolhendo.
+      async function carregarPerfis() {
+        const { ativo, fixos, lojas } = await fetch("/api/perfis").then((r) => r.json());
+
+        const opcoesFixas = fixos
+          .map((p) => `<option value="${escapar(p)}">${escapar(p)}</option>`)
+          .join("");
+        const opcoesLojas = lojas
+          .map((l) => `<option value="${escapar(l.perfil)}">${escapar(l.nome)} (${escapar(l.perfil)})</option>`)
+          .join("");
+
+        $("perfil").innerHTML = `<optgroup label="Perfis">${opcoesFixas}</optgroup>${
+          opcoesLojas ? `<optgroup label="Lojas">${opcoesLojas}</optgroup>` : ""
+        }`;
+        $("perfil").value = ativo;
+        perfilCarregado = true;
+      }
+
+      $("perfil").addEventListener("change", async () => {
+        const perfil = $("perfil").value;
+        $("avisoPerfil").textContent = "trocando...";
+        $("avisoPerfil").style.color = "var(--apagado)";
+        try {
+          const resposta = await fetch("/api/perfil", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ perfil }),
+          });
+          const dados = await resposta.json();
+          if (!resposta.ok) throw new Error(dados.erro ?? "falhou");
+          $("avisoPerfil").textContent = "✅ agora em " + dados.perfil;
+          $("avisoPerfil").style.color = "var(--verde)";
+          atualizar();
+        } catch (erro) {
+          $("avisoPerfil").textContent = "❌ " + erro.message;
+          $("avisoPerfil").style.color = "var(--vermelho)";
+        }
+      });
+
       async function atualizar() {
         try {
           const estado = await (await fetch("/api/estado")).json();
@@ -505,6 +555,9 @@
           if (estado.contatos?.length && contatos.length === 0) {
             contatos = estado.contatos;
             $("contatosDisparo").innerHTML = chipsDeContatos();
+          }
+          if (perfilCarregado && estado.perfil && $("perfil").value !== estado.perfil) {
+            $("perfil").value = estado.perfil;
           }
           pintarPausados(estado.pausados);
           pintarTarefas(estado.tarefas);
@@ -571,6 +624,8 @@
 
       // O vocabulário de horários vem do servidor, para não duplicar as tabelas
       // aqui no navegador.
+      carregarPerfis().catch(() => {});
+
       fetch("/api/horarios")
         .then((r) => r.json())
         .then((v) => {

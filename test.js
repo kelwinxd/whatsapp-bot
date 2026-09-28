@@ -12,6 +12,7 @@ import { Lojas, gerarSlug, nomeDoDocumento } from "./src/core/lojas.js";
 import { separarPerfil } from "./src/core/prompt.js";
 import { ControleDeAtendimento, IdsEnviados, comandoDoDono } from "./src/core/atendimento.js";
 import { normalizarTelefone } from "./src/core/telefone.js";
+import { carregarPreferencias, salvarPreferencias } from "./src/core/preferencias.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -1652,4 +1653,58 @@ test("a agenda também normaliza o DDI dos destinos", () => {
     "5511988887777",
   ]);
   assert.deepEqual(normalizarTelefones({ telefone: "19 99372-3677" }), ["5519993723677"]);
+});
+
+// --- Troca de perfil em execução -------------------------------------------
+
+test("trocar o perfil muda a resposta seguinte, sem recriar o bot", async () => {
+  const { base, lojas } = lojasDeTeste();
+  await lojas.salvar({ respostas: { nome: "Sara Modas", horarioSemana: "9h às 17h" } });
+
+  const prompts = [];
+  const prompt = { perfil: "loja_sara-modas", limitePalavras: 60 };
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async () => ({ id: "X" }),
+    },
+    ia: { nome: "falsa", responder: async (p) => { prompts.push(p.sistema); return "ok"; } },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    base,
+    lojas,
+    prompt,
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.processarWebhook(webhook("qual o horário?"));
+  assert.match(prompts[0], /Dados da loja/);
+  assert.match(prompts[0], /Sara Modas/);
+
+  // É o mesmo objeto de prompt que a rota do painel altera.
+  prompt.perfil = "puro";
+  await bot.processarWebhook({ ...webhook("qual o horário?"), phone: "5511911112222" });
+  // Perfil puro não manda instrução nenhuma.
+  assert.equal(prompts[1], null);
+
+  prompt.perfil = "whatsapp";
+  await bot.processarWebhook({ ...webhook("oi"), phone: "5511933334444" });
+  assert.match(prompts[2], /português do Brasil/);
+  assert.doesNotMatch(prompts[2], /Dados da loja/);
+
+  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(base.arquivo, { force: true });
+});
+
+test("preferências sobrevivem ao restart", async () => {
+  const arquivo = `${tmpdir()}/pref-teste-${Date.now()}.json`;
+
+  // Arquivo inexistente não é erro: o .env continua valendo.
+  assert.deepEqual(carregarPreferencias(arquivo), {});
+
+  await salvarPreferencias(arquivo, { perfil: "loja_sara-modas" });
+  assert.deepEqual(carregarPreferencias(arquivo), { perfil: "loja_sara-modas" });
+
+  await rm(arquivo, { force: true });
 });

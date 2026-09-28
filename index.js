@@ -5,6 +5,7 @@ import { Metricas } from "./src/core/Metricas.js";
 import { Agenda } from "./src/core/Agenda.js";
 import { criarServidor } from "./src/server.js";
 import { Lojas } from "./src/core/lojas.js";
+import { salvarPreferencias } from "./src/core/preferencias.js";
 
 // Ponto de entrada: escolhe as implementações, monta o serviço e sobe o HTTP.
 // É o único lugar que conhece todas as peças ao mesmo tempo.
@@ -31,7 +32,18 @@ const agenda = new Agenda({
   bot,
   metricas,
 });
-const app = criarServidor({ bot, metricas, agenda, base: dependencias.base, lojas, config });
+// Guarda a escolha do painel para ela sobreviver ao restart.
+const aoTrocarPerfil = (perfil) => salvarPreferencias(config.preferenciasArquivo, { perfil });
+
+const app = criarServidor({
+  bot,
+  metricas,
+  agenda,
+  base: dependencias.base,
+  lojas,
+  aoTrocarPerfil,
+  config,
+});
 
 const server = app.listen(config.porta, () => {
   // O Node chama este callback mesmo quando a porta está ocupada (com
