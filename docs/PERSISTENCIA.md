@@ -110,3 +110,46 @@ política de retenção, não limite de prompt.
 Em produção o banco não seria o mesmo da Evolution — seria um serviço próprio,
 com backup. Aqui reaproveitar o container que já existe evita subir mais um
 para provar a ideia.
+
+## Trocar de banco depois (MySQL, SQLite, o que for)
+
+O desenho já permite: **só os adaptadores conhecem banco**. Nada em `src/core`
+importa `pg` nem escreve SQL, e o `npm run migrar` pede os adaptadores ao
+registry e chama `migrar()` em quem tiver — ele não sabe qual banco está
+atrás.
+
+Trocar significa: escrever `MySqlRepo`, `MySqlLojas` e companhia, acrescentar
+uma linha em cada catálogo do `registry.js` e mudar o `.env`. Nenhum arquivo do
+núcleo muda.
+
+O que cada adaptador novo vai ter de reescrever, porque é dialeto e não
+conceito:
+
+| No Postgres | No MySQL |
+| --- | --- |
+| `$1`, `$2` | `?` |
+| `ON CONFLICT (x) DO UPDATE` | `ON DUPLICATE KEY UPDATE` |
+| `RETURNING *` | não existe: `INSERT` e depois `SELECT` |
+| `JSONB` com `->>'campo'` | `JSON` com `->>'$.campo'` |
+| `TEXT[]` (telefones) | sem array: JSON ou tabela filha |
+| `TIMESTAMPTZ` | `DATETIME`/`TIMESTAMP`, sem fuso |
+| `now() + INTERVAL '1 minute'` | `DATE_ADD(now(), INTERVAL ? MINUTE)` |
+| `BIGSERIAL` | `BIGINT AUTO_INCREMENT` |
+
+O caso mais chato é o `TEXT[]` dos telefones da agenda, que não tem equivalente
+direto. Num adaptador MySQL viraria coluna JSON.
+
+### E um ORM não resolveria isso?
+
+Prisma, Drizzle ou Knex geram SQL para vários dialetos e evitariam reescrever
+as consultas. Em troca: mais uma dependência, um jeito próprio de fazer
+migração e, mesmo assim, as diferenças de verdade continuam aparecendo (array,
+operador de JSON, `RETURNING`).
+
+Vale quando existirem vários bancos de fato, ou um time grande escrevendo
+consulta. Para dois adaptadores escritos uma vez, SQL direto é menos peça
+móvel — e cada adaptador fica idiomático no seu banco, em vez de todos ficarem
+no menor denominador comum.
+
+A recomendação, então: manter portas e escrever o segundo adaptador **quando a
+necessidade for real**, não antes.
