@@ -83,6 +83,8 @@ npm test
 
 - [docs/RAG.md](docs/RAG.md) — plano para o bot responder com base em documentos
   seus (PDF, txt), com porta, adaptadores, ingestão, custos e fases.
+- [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md) — o que sai do JSON quando isso
+  for para produção, e em que ordem.
 - [docs/PRODUTO_SUPORTE.md](docs/PRODUTO_SUPORTE.md) — notas de desenho para
   virar produto de suporte para lojas: como alimentar a base com gente leiga,
   conta da OpenAI, multi-tenant, margem e risco.
@@ -213,6 +215,20 @@ marcador, os dois formatos são aceitos.
 
 Controle em `RESPOSTA_MAX_MENSAGENS` (1 volta ao comportamento de mensagem
 única). O excedente é juntado na última mensagem, nunca descartado.
+
+## Histórico que sobrevive a restart
+
+Por padrão o histórico fica em memória e some quando o bot reinicia — e aí ele
+trata toda mensagem como a primeira da conversa, se apresentando de novo. Para
+persistir:
+
+```bash
+docker exec evolution_postgres psql -U evolution -d postgres -c "CREATE DATABASE wpbot"
+npm run migrar
+```
+
+E no `.env`: `HISTORY_STORE=postgres` com `DATABASE_URL` apontando para esse
+database. Detalhes e as próximas etapas em [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md).
 
 ## Trocando o perfil pelo painel
 

@@ -2,6 +2,7 @@ import { ZapiAdapter } from "../adapters/whatsapp/ZapiAdapter.js";
 import { EvolutionAdapter } from "../adapters/whatsapp/EvolutionAdapter.js";
 import { OpenAIAdapter } from "../adapters/ia/OpenAIAdapter.js";
 import { MemoriaRepo } from "../adapters/conversas/MemoriaRepo.js";
+import { PostgresRepo } from "../adapters/conversas/PostgresRepo.js";
 import { MemoriaBase, BaseNula } from "../adapters/base/MemoriaBase.js";
 
 // Strategy: cada porta tem um catálogo de implementações, e a escolha vem da
@@ -20,6 +21,8 @@ const ia = {
 
 const conversas = {
   memoria: (config) => new MemoriaRepo(config.conversa),
+  postgres: (config) =>
+    new PostgresRepo({ url: config.banco.url, maxHistorico: config.conversa.maxHistorico }),
 };
 
 // A base recebe o vetorizador do adaptador de IA já escolhido: ela não sabe

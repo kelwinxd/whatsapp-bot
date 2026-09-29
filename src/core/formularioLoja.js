@@ -79,7 +79,6 @@ export const PERGUNTAS = [
 // Campos que precisam sair exatos e por isso vão no prompt, não no RAG.
 const CAMPOS_ESTRUTURADOS = [
   ["nome", "Nome"],
-  ["nomeAtendente", "Quem atende"],
   ["ramo", "Ramo"],
   ["endereco", "Endereço"],
   ["referencia", "Referência"],

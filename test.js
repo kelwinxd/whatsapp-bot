@@ -13,6 +13,7 @@ import { separarPerfil } from "./src/core/prompt.js";
 import { ControleDeAtendimento, IdsEnviados, comandoDoDono } from "./src/core/atendimento.js";
 import { normalizarTelefone } from "./src/core/telefone.js";
 import { carregarPreferencias, salvarPreferencias } from "./src/core/preferencias.js";
+import { PostgresRepo } from "./src/adapters/conversas/PostgresRepo.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -1707,4 +1708,90 @@ test("preferências sobrevivem ao restart", async () => {
   assert.deepEqual(carregarPreferencias(arquivo), { perfil: "loja_sara-modas" });
 
   await rm(arquivo, { force: true });
+});
+
+// --- Histórico em Postgres -------------------------------------------------
+
+// Pool falso: registra as consultas e devolve o que o teste mandar. Permite
+// verificar a forma do SQL sem subir banco.
+function poolFalso(resultados = []) {
+  const consultas = [];
+  return {
+    consultas,
+    query: async (texto, valores) => {
+      consultas.push({ texto: texto.replace(/\s+/g, " ").trim(), valores });
+      return resultados.shift() ?? { rows: [] };
+    },
+    end: async () => {},
+  };
+}
+
+test("PostgresRepo lê as últimas mensagens em ordem cronológica", async () => {
+  const pool = poolFalso([
+    { rows: [{ papel: "user", conteudo: "oi" }, { papel: "assistant", conteudo: "olá!" }] },
+  ]);
+  const repo = new PostgresRepo({ pool, maxHistorico: 10 });
+
+  const historico = await repo.historico("5519993723677");
+
+  assert.deepEqual(historico, [
+    { role: "user", content: "oi" },
+    { role: "assistant", content: "olá!" },
+  ]);
+
+  // Busca as N mais recentes, mas devolve da mais antiga para a mais nova.
+  const { texto, valores } = pool.consultas[0];
+  assert.match(texto, /ORDER BY id DESC LIMIT \$2/);
+  assert.match(texto, /ORDER BY id ASC/);
+  assert.deepEqual(valores, ["5519993723677", 10]);
+});
+
+test("PostgresRepo grava e apaga por telefone", async () => {
+  const pool = poolFalso();
+  const repo = new PostgresRepo({ pool, maxHistorico: 10 });
+
+  await repo.acrescentar("551", { role: "user", content: "oi" });
+  assert.match(pool.consultas[0].texto, /INSERT INTO conversas/);
+  assert.deepEqual(pool.consultas[0].valores, ["551", "user", "oi"]);
+
+  await repo.limpar("551");
+  assert.match(pool.consultas[1].texto, /DELETE FROM conversas WHERE telefone = \$1/);
+
+  // Sem url e sem pool não sobe: erro de configuração aparece na subida.
+  assert.throws(() => new PostgresRepo({}), /DATABASE_URL/);
+});
+
+test("o bot lembra da conversa entre reinícios quando o histórico é persistido", async () => {
+  // Simula dois processos diferentes compartilhando o mesmo armazenamento.
+  const guardado = [];
+  const repoPersistente = () => ({
+    nome: "falso-persistente",
+    historico: async () => [...guardado],
+    acrescentar: async (_t, m) => guardado.push(m),
+    limpar: async () => {},
+  });
+
+  const prompts = [];
+  const criarBot = () =>
+    new BotService({
+      whatsapp: {
+        nome: "falso",
+        interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+        enviarTexto: async () => ({ id: "X" }),
+      },
+      ia: { nome: "falsa", responder: async (p) => { prompts.push(p.sistema); return "ok"; } },
+      conversas: repoPersistente(),
+      prompt: { perfil: "whatsapp", limitePalavras: 60 },
+      dormir: async () => {},
+      logger: { log() {}, error() {} },
+    });
+
+  await criarBot().processarWebhook(webhook("oi"));
+  // "Reinicia": bot novo, mesmo armazenamento.
+  await criarBot().processarWebhook(webhook("e o horário?"));
+
+  assert.equal(guardado.length, 4); // 2 perguntas + 2 respostas
+  // Com o histórico preservado, a segunda mensagem não é tratada como a
+  // primeira da conversa — que é o que fazia o bot se apresentar de novo.
+  assert.equal(prompts.length, 2);
 });

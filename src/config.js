@@ -61,7 +61,7 @@ export const config = {
   provedores: {
     whatsapp: process.env.WHATSAPP_PROVIDER ?? "zapi", // zapi | evolution
     ia: process.env.AI_PROVIDER ?? "openai",
-    historico: process.env.HISTORY_STORE ?? "memoria",
+    historico: process.env.HISTORY_STORE ?? "memoria", // memoria | postgres
   },
 
   zapi: {
@@ -106,6 +106,12 @@ export const config = {
   // Atalhos de telefone para o painel, no formato "Nome=numero", separados por
   // ; ou vírgula. Ficam no .env pelo mesmo motivo do numeroTeste.
   contatos: lerContatos(process.env.CONTATOS, process.env.NUMBER_TEST),
+
+  banco: {
+    // Um Postgres para o que precisa durar. O container da Evolution já roda
+    // um; basta um database separado (porta 5434 no host).
+    url: process.env.DATABASE_URL,
+  },
 
   conversa: {
     // Mensagens guardadas por contato (usuário + bot somados).

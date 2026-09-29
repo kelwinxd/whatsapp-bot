@@ -8,7 +8,8 @@
     "test": "node --test",
     "enviar": "node scripts/enviar.js",
     "horarios": "node scripts/horarios.js",
-    "indexar": "node scripts/indexar.js"
+    "indexar": "node scripts/indexar.js",
+    "migrar": "node scripts/migrar.js"
   },
   "author": "kelwin",
   "license": "ISC",
@@ -16,7 +17,8 @@
   "dependencies": {
     "dotenv": "^18.0.2",
     "express": "^5.2.1",
-    "node-cron": "^4.6.0"
+    "node-cron": "^4.6.0",
+    "pg": "^8.23.0"
   },
   "type": "module"
 }
