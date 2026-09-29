@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { writeFile } from "node:fs/promises";
+import { ArquivoAgenda } from "../adapters/agenda/ArquivoAgenda.js";
 import { resolverHorario, descreverHorario, decomporHorario } from "./horarios.js";
 import { normalizarTelefones as normalizar } from "./telefone.js";
 
@@ -27,11 +27,12 @@ export class Agenda {
     metricas,
     logger = console,
     fusoHorario = "America/Sao_Paulo",
-    // Onde gravar quando o painel salvar. O mesmo arquivo lido na subida.
+    // Onde guardar: arquivo (padrão) ou Postgres.
+    repo = null,
     arquivo = process.env.AGENDA_ARQUIVO ?? "agenda.json",
   }) {
     this.tarefas = tarefas;
-    this.arquivo = arquivo;
+    this.repo = repo ?? new ArquivoAgenda({ arquivo, fusoHorario });
     this.bot = bot;
     this.metricas = metricas;
     this.logger = logger;
@@ -75,6 +76,12 @@ export class Agenda {
     }
 
     return this.agendadas.size;
+  }
+
+  /** Lê as tarefas do armazenamento. Chamado na subida, antes de iniciar(). */
+  async carregar() {
+    this.tarefas = await this.repo.carregar();
+    return this.tarefas;
   }
 
   parar() {
@@ -153,11 +160,7 @@ export class Agenda {
       ...(t.fonte ? { fonte: t.fonte.trim() } : {}),
     }));
 
-    await writeFile(
-      this.arquivo,
-      `${JSON.stringify({ fusoHorario: this.fusoHorario, tarefas: normalizadas }, null, 2)}\n`,
-      "utf8",
-    );
+    await this.repo.salvar(normalizadas);
 
     this.tarefas = normalizadas;
     this.parar();

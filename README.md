@@ -227,8 +227,9 @@ docker exec evolution_postgres psql -U evolution -d postgres -c "CREATE DATABASE
 npm run migrar
 ```
 
-E no `.env`: `HISTORY_STORE=postgres` com `DATABASE_URL` apontando para esse
-database. Detalhes e as próximas etapas em [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md).
+E no `.env`: `HISTORY_STORE=postgres` (histórico e pausas) e
+`ESTADO_STORE=postgres` (lojas, agenda e preferências), com `DATABASE_URL`
+apontando para esse database. A migração importa o que já está em arquivo. Detalhes e as próximas etapas em [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md).
 
 ## Trocando o perfil pelo painel
 

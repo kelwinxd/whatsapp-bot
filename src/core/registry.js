@@ -6,6 +6,12 @@ import { PostgresRepo } from "../adapters/conversas/PostgresRepo.js";
 import { MemoriaBase, BaseNula } from "../adapters/base/MemoriaBase.js";
 import { ControleDeAtendimento } from "./atendimento.js";
 import { PostgresAtendimento } from "../adapters/atendimento/PostgresAtendimento.js";
+import { ArquivoLojas } from "../adapters/lojas/ArquivoLojas.js";
+import { PostgresLojas } from "../adapters/lojas/PostgresLojas.js";
+import { ArquivoAgenda } from "../adapters/agenda/ArquivoAgenda.js";
+import { PostgresAgenda } from "../adapters/agenda/PostgresAgenda.js";
+import { ArquivoPreferencias } from "../adapters/preferencias/ArquivoPreferencias.js";
+import { PostgresPreferencias } from "../adapters/preferencias/PostgresPreferencias.js";
 
 // Strategy: cada porta tem um catálogo de implementações, e a escolha vem da
 // configuração. Adicionar um provedor novo (Baileys direto, Twilio, Anthropic,
@@ -46,6 +52,23 @@ const atendimento = {
   postgres: (config) => new PostgresAtendimento({ url: config.banco.url }),
 };
 
+// Lojas, agenda e preferências andam juntas: são a configuração de operação.
+const lojas = {
+  arquivo: (config) => new ArquivoLojas({ pasta: config.lojas.pasta }),
+  postgres: (config) => new PostgresLojas({ url: config.banco.url }),
+};
+
+const agenda = {
+  arquivo: (config) =>
+    new ArquivoAgenda({ arquivo: config.agenda.arquivo, fusoHorario: config.agenda.fusoHorario }),
+  postgres: (config) => new PostgresAgenda({ url: config.banco.url }),
+};
+
+const preferencias = {
+  arquivo: (config) => new ArquivoPreferencias({ arquivo: config.preferenciasArquivo }),
+  postgres: (config) => new PostgresPreferencias({ url: config.banco.url }),
+};
+
 function escolher(catalogo, chave, rotulo, config, extras) {
   const criar = catalogo[chave];
   if (!criar) {
@@ -66,5 +89,8 @@ export function montarDependencias(config) {
     conversas: escolher(conversas, config.provedores.historico, "histórico", config),
     base: escolher(base, config.rag.provedor, "RAG", config, { ia: provedorIA }),
     atendimento: escolher(atendimento, config.provedores.pausas, "pausas", config),
+    lojas: escolher(lojas, config.provedores.estado, "lojas", config),
+    agenda: escolher(agenda, config.provedores.estado, "agenda", config),
+    preferencias: escolher(preferencias, config.provedores.estado, "preferências", config),
   };
 }

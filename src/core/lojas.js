@@ -1,6 +1,5 @@
-import { readFile, writeFile, mkdir, readdir, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { montarDocumento, resumoParaPrompt, contarRespostas } from "./formularioLoja.js";
+import { ArquivoLojas } from "../adapters/lojas/ArquivoLojas.js";
 
 // Várias lojas no mesmo bot. Cada cadastro do formulário vira:
 //
@@ -25,58 +24,47 @@ export function gerarSlug(nome) {
 }
 
 export class Lojas {
-  constructor({ pasta = "dados/lojas", base = null, logger = console }) {
-    this.pasta = pasta;
+  /**
+   * @param {object} params
+   * @param {object} [params.repo] Onde guardar (arquivo ou Postgres). O
+   *   documento e a indexação continuam sendo responsabilidade daqui.
+   */
+  constructor({ repo = null, pasta = "dados/lojas", base = null, logger = console }) {
+    this.repo = repo ?? new ArquivoLojas({ pasta });
     this.base = base;
     this.logger = logger;
   }
 
-  caminho(slug) {
-    return join(this.pasta, `${slug}.json`);
+  get nome() {
+    return this.repo.nome;
   }
 
   async listar() {
-    let arquivos = [];
-    try {
-      arquivos = (await readdir(this.pasta)).filter((a) => a.endsWith(".json"));
-    } catch (erro) {
-      if (erro.code !== "ENOENT") throw erro;
-      return [];
-    }
-
-    const lojas = [];
-    for (const arquivo of arquivos) {
-      const slug = arquivo.replace(/\.json$/, "");
-      const loja = await this.obter(slug);
-      if (loja) {
-        lojas.push({
-          slug,
-          nome: loja.respostas.nome ?? slug,
-          perfil: `loja_${slug}`,
-          indexadoEm: loja.indexadoEm ?? null,
-          progresso: contarRespostas(loja.respostas),
-        });
-      }
-    }
-    return lojas.sort((a, b) => a.nome.localeCompare(b.nome));
+    const registros = await this.repo.listar();
+    return registros
+      .map((registro) => ({
+        slug: registro.slug,
+        nome: registro.respostas.nome ?? registro.slug,
+        perfil: `loja_${registro.slug}`,
+        indexadoEm: registro.indexadoEm ?? null,
+        progresso: contarRespostas(registro.respostas),
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
   }
 
   async obter(slug) {
-    try {
-      const dados = JSON.parse(await readFile(this.caminho(slug), "utf8"));
-      return {
-        slug,
-        respostas: dados.respostas ?? {},
-        indexadoEm: dados.indexadoEm ?? null,
-        // O resumo é derivado, não salvo: mudar o formulário não deixa
-        // resumo velho preso no arquivo.
-        resumo: resumoParaPrompt(dados.respostas ?? {}),
-        documento: nomeDoDocumento(slug),
-      };
-    } catch (erro) {
-      if (erro.code === "ENOENT") return null;
-      throw erro;
-    }
+    const registro = await this.repo.obter(slug);
+    if (!registro) return null;
+
+    return {
+      slug,
+      respostas: registro.respostas,
+      indexadoEm: registro.indexadoEm,
+      // O resumo é derivado, não guardado: mudar o formulário não deixa
+      // resumo velho preso no armazenamento.
+      resumo: resumoParaPrompt(registro.respostas),
+      documento: nomeDoDocumento(slug),
+    };
   }
 
   /**
@@ -100,12 +88,7 @@ export class Lojas {
     }
 
     const indexadoEm = new Date().toISOString();
-    await mkdir(this.pasta, { recursive: true });
-    await writeFile(
-      this.caminho(identificador),
-      `${JSON.stringify({ respostas, indexadoEm }, null, 2)}\n`,
-      "utf8",
-    );
+    await this.repo.salvar({ slug: identificador, respostas, indexadoEm });
 
     this.logger.log(
       `🏪 Loja "${respostas.nome ?? identificador}" salva${pedacos ? ` e indexada em ${pedacos} pedaço(s)` : " (RAG desligado)"}`,
@@ -117,10 +100,9 @@ export class Lojas {
   // Apaga as respostas e o documento da base: deixar o documento indexado
   // faria o bot responder por uma loja que não existe mais.
   async remover(slug) {
-    const existia = (await this.obter(slug)) !== null;
-    if (!existia) return { removida: false };
+    const removida = await this.repo.remover(slug);
+    if (!removida) return { removida: false };
 
-    await rm(this.caminho(slug), { force: true });
     let pedacos = 0;
     if (this.base && this.base.nome !== "nenhum") {
       pedacos = await this.base.remover(nomeDoDocumento(slug));

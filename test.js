@@ -15,6 +15,9 @@ import { normalizarTelefone } from "./src/core/telefone.js";
 import { carregarPreferencias, salvarPreferencias } from "./src/core/preferencias.js";
 import { PostgresRepo } from "./src/adapters/conversas/PostgresRepo.js";
 import { PostgresAtendimento } from "./src/adapters/atendimento/PostgresAtendimento.js";
+import { PostgresLojas } from "./src/adapters/lojas/PostgresLojas.js";
+import { PostgresAgenda } from "./src/adapters/agenda/PostgresAgenda.js";
+import { PostgresPreferencias } from "./src/adapters/preferencias/PostgresPreferencias.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -1287,7 +1290,7 @@ test("cada cadastro cria uma loja, um perfil e um documento próprio", async () 
   assert.equal(obtida.documento, "loja-sara-modas.md");
   assert.equal(await lojas.obter("nao-existe"), null);
 
-  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(lojas.repo.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });
 });
 
@@ -1301,7 +1304,7 @@ test("salvar de novo atualiza a loja em vez de duplicar", async () => {
   assert.match((await lojas.obter("sara-modas")).resumo, /10h às 19h/);
   assert.equal((await base.documentos()).length, 1);
 
-  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(lojas.repo.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });
 });
 
@@ -1318,7 +1321,7 @@ test("remover apaga as respostas e o documento da base", async () => {
   assert.deepEqual(await lojas.listar(), []);
   assert.deepEqual(await lojas.remover("sara-modas"), { removida: false });
 
-  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(lojas.repo.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });
 });
 
@@ -1338,7 +1341,7 @@ test("a busca fica restrita ao documento da loja", async () => {
   // Documento inexistente não vaza resultado de outro.
   assert.deepEqual(await base.buscar("creatina", 5, { documentos: ["loja-fantasma.md"] }), []);
 
-  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(lojas.repo.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });
 });
 
@@ -1375,7 +1378,7 @@ test("o BotService resolve a loja do perfil ativo", async () => {
   assert.deepEqual(fantasma.documentos, ["loja-nao-cadastrada.md"]);
   assert.match(erros.join(" "), /não cadastrada/);
 
-  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(lojas.repo.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });
 });
 
@@ -1445,7 +1448,7 @@ test("o bot se apresenta uma vez por conversa, e por contato", async () => {
   await bot.processarWebhook({ ...webhook("bom dia"), phone: "5511988887777" });
   assert.match(prompts[2], /PRIMEIRA mensagem desta conversa/);
 
-  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(lojas.repo.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });
 });
 
@@ -1695,7 +1698,7 @@ test("trocar o perfil muda a resposta seguinte, sem recriar o bot", async () => 
   assert.match(prompts[2], /português do Brasil/);
   assert.doesNotMatch(prompts[2], /Dados da loja/);
 
-  await rm(lojas.pasta, { recursive: true, force: true });
+  await rm(lojas.repo.pasta, { recursive: true, force: true });
   await rm(base.arquivo, { force: true });
 });
 
@@ -1826,4 +1829,102 @@ test("PostgresAtendimento considera expirada a pausa vencida", async () => {
 
   assert.equal(await controle.estaPausado("551"), true);
   assert.throws(() => new PostgresAtendimento({}), /DATABASE_URL/);
+});
+
+// --- Etapa 3: lojas, agenda e preferências fora do JSON --------------------
+
+test("PostgresLojas guarda as respostas como JSONB e substitui no conflito", async () => {
+  const pool = poolFalso([
+    { rows: [{ slug: "sara-modas", respostas: { nome: "Sara Modas" }, indexado_em: null }] },
+  ]);
+  const repo = new PostgresLojas({ pool });
+
+  const salva = await repo.salvar({
+    slug: "sara-modas",
+    respostas: { nome: "Sara Modas" },
+    indexadoEm: null,
+  });
+
+  assert.deepEqual(salva, { slug: "sara-modas", respostas: { nome: "Sara Modas" }, indexadoEm: null });
+  assert.match(pool.consultas[0].texto, /ON CONFLICT \(slug\) DO UPDATE/);
+  // O JSON vai serializado; o formulário muda de campo demais para virar coluna.
+  assert.equal(pool.consultas[0].valores[1], JSON.stringify({ nome: "Sara Modas" }));
+
+  assert.throws(() => new PostgresLojas({}), /DATABASE_URL/);
+});
+
+test("PostgresAgenda substitui a lista inteira em transação", async () => {
+  const cliente = { consultas: [], query: async (t, v) => { cliente.consultas.push({ t: t.replace(/\s+/g, " ").trim(), v }); return { rows: [] }; }, release() {} };
+  const pool = { connect: async () => cliente, query: async () => ({ rows: [] }), end: async () => {} };
+  const repo = new PostgresAgenda({ pool });
+
+  await repo.salvar([
+    { nome: "versiculo", cron: "8_AM+EVERY_DAY", ativa: true, telefones: ["551"], instrucao: "manda" },
+  ]);
+
+  const sequencia = cliente.consultas.map((c) => c.t.split(" ")[0]);
+  // Apagar e inserir dentro de uma transação: nunca existe um instante com a
+  // agenda vazia.
+  assert.deepEqual(sequencia, ["BEGIN", "DELETE", "INSERT", "COMMIT"]);
+  assert.deepEqual(cliente.consultas[2].v, ["versiculo", "8_AM+EVERY_DAY", true, ["551"], "manda", null]);
+});
+
+test("PostgresPreferencias grava chave a chave", async () => {
+  const pool = poolFalso([{ rows: [] }, { rows: [{ chave: "perfil", valor: "loja_sara-modas" }] }]);
+  const repo = new PostgresPreferencias({ pool });
+
+  await repo.gravar({ perfil: "loja_sara-modas" });
+  assert.match(pool.consultas[0].texto, /ON CONFLICT \(chave\) DO UPDATE/);
+
+  assert.deepEqual(await repo.ler(), { perfil: "loja_sara-modas" });
+});
+
+test("Lojas funciona com qualquer repositório", async () => {
+  // Repositório falso: prova que a classe não sabe onde os dados moram.
+  const guardado = new Map();
+  const repo = {
+    nome: "falso",
+    listar: async () => [...guardado.values()],
+    obter: async (slug) => guardado.get(slug) ?? null,
+    salvar: async (registro) => { guardado.set(registro.slug, registro); return registro; },
+    remover: async (slug) => guardado.delete(slug),
+  };
+
+  const base = baseDeTeste();
+  const lojas = new Lojas({ repo, base, logger: { log() {}, error() {} } });
+
+  assert.equal(lojas.nome, "falso");
+  const salva = await lojas.salvar({ respostas: { nome: "Sara Modas", ramo: "Roupas" } });
+  assert.equal(salva.perfil, "loja_sara-modas");
+  assert.equal((await lojas.listar())[0].nome, "Sara Modas");
+  assert.match((await lojas.obter("sara-modas")).resumo, /Sara Modas/);
+
+  // Remover tira das duas pontas: armazenamento e base vetorial.
+  assert.equal((await lojas.remover("sara-modas")).removida, true);
+  assert.deepEqual(await lojas.listar(), []);
+  assert.deepEqual(await base.documentos(), []);
+
+  await rm(base.arquivo, { force: true });
+});
+
+test("Agenda carrega e salva pelo repositório", async () => {
+  let guardadas = [{ ...TAREFA, nome: "do-repositorio" }];
+  const repo = {
+    nome: "falso",
+    carregar: async () => guardadas,
+    salvar: async (tarefas) => { guardadas = tarefas; return tarefas; },
+  };
+
+  const agenda = new Agenda({ repo, bot: {}, logger: { log() {}, error() {} } });
+
+  await agenda.carregar();
+  assert.equal(agenda.listar()[0].nome, "do-repositorio");
+
+  await agenda.salvar([{ ...TAREFA, nome: "nova" }]);
+  assert.equal(guardadas[0].nome, "nova");
+  // Normalizou antes de guardar: o telefone sai com DDI.
+  assert.deepEqual(guardadas[0].telefones, ["5519999999999"]);
+
+  // salvar() reagenda: sem parar, o cron segura o processo aberto.
+  agenda.parar();
 });

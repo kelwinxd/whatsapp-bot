@@ -58,14 +58,14 @@ adaptadores da mesma porta, e o `BotService` não muda.
 | --- | --- | --- |
 | 1 ✅ | Histórico em Postgres (`HISTORY_STORE=postgres`) | é o que já causa bug visível: o bot se apresentando toda mensagem |
 | 2 ✅ | Pausas do atendimento humano | segundo bug de verdade: deploy no meio de um atendimento |
-| 3 | Lojas, preferências e agenda | o passo que permite duas instâncias |
+| 3 ✅ | Lojas, preferências e agenda | o passo que permite duas instâncias |
 | 4 | Base do RAG em pgvector | quando a base passar de alguns milhares de pedaços |
 | 5 | Métricas e eventos | último: hoje servem para olhar o agora, não o histórico |
 
 Cada etapa é um adaptador novo e uma linha no `registry.js`. Nada de "parar
 tudo e migrar".
 
-## Etapas 1 e 2, já feitas
+## Etapas 1, 2 e 3, já feitas
 
 ```bash
 # o Postgres da Evolution já roda; basta um database separado
@@ -81,12 +81,26 @@ HISTORY_STORE=postgres
 # PAUSAS_STORE segue o HISTORY_STORE quando não é declarado
 ```
 
-Duas tabelas: `conversas` e `pausas`. O `npm run migrar` cria as duas e pode
-rodar de novo sem estragar nada.
+Cinco tabelas: `conversas`, `pausas`, `lojas`, `tarefas` e `preferencias`. O
+`npm run migrar` cria todas e **importa o que já existe em arquivo** quando a
+tabela está vazia — migrar não significa recadastrar na mão. Rodar de novo não
+duplica, porque a importação só acontece em tabela vazia.
+
+Para ligar a etapa 3: `ESTADO_STORE=postgres` (lojas, agenda e preferências
+migram juntas, porque são a mesma coisa: configuração de operação).
+
+As respostas do formulário ficam em JSONB: o formulário ganha campo com
+frequência, e uma coluna por pergunta viraria migração a cada pergunta nova.
+O que se consulta (o slug) é coluna de verdade.
+
+A agenda é salva substituindo a lista inteira, dentro de uma transação — o
+painel manda o que está na tela, e tarefa removida tem que sumir do banco sem
+existir um instante com a agenda vazia.
 
 Verificado contra o banco de verdade: três processos distintos continuaram a
-mesma conversa (a apresentação veio só no primeiro), e uma pausa criada num
-processo apareceu no outro, com o prazo restante certo.
+mesma conversa (a apresentação veio só no primeiro), uma pausa criada num
+processo apareceu no outro com o prazo certo, e salvar loja, agenda e perfil
+pelo painel gravou nas tabelas.
 
 A tabela guarda a conversa inteira e a leitura traz só as últimas
 `MAX_HISTORICO` mensagens: o corte é de quanto vai para o modelo, não de quanto

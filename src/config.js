@@ -65,6 +65,9 @@ export const config = {
     // As pausas seguem o histórico por padrão: quem quer uma coisa durável
     // normalmente quer a outra.
     pausas: process.env.PAUSAS_STORE ?? process.env.HISTORY_STORE ?? "memoria",
+    // Lojas, agenda e preferências: arquivo | postgres. São a configuração de
+    // operação, e migram juntas.
+    estado: process.env.ESTADO_STORE ?? "arquivo",
   },
 
   zapi: {
@@ -129,7 +132,10 @@ export const config = {
     pausaMs: Number(process.env.PAUSA_ENTRE_MENSAGENS_MS ?? 800),
   },
 
-  agenda: carregarAgenda(),
+  agenda: {
+    arquivo: process.env.AGENDA_ARQUIVO ?? "agenda.json",
+    fusoHorario: carregarAgenda().fusoHorario ?? "America/Sao_Paulo",
+  },
 
   // Uma pasta, um arquivo por loja. O perfil loja_<slug> escolhe qual atende.
   lojas: {

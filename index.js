@@ -5,7 +5,7 @@ import { Metricas } from "./src/core/Metricas.js";
 import { Agenda } from "./src/core/Agenda.js";
 import { criarServidor } from "./src/server.js";
 import { Lojas } from "./src/core/lojas.js";
-import { salvarPreferencias } from "./src/core/preferencias.js";
+
 
 // Ponto de entrada: escolhe as implementações, monta o serviço e sobe o HTTP.
 // É o único lugar que conhece todas as peças ao mesmo tempo.
@@ -14,7 +14,12 @@ console.log("🔧 Iniciando...");
 
 const dependencias = montarDependencias(config);
 const metricas = new Metricas();
-const lojas = new Lojas({ pasta: config.lojas.pasta, base: dependencias.base });
+const lojas = new Lojas({ repo: dependencias.lojas, base: dependencias.base });
+
+// As preferências vêm do armazenamento (arquivo ou banco) e vencem o .env: é a
+// escolha mais recente de quem está operando.
+const preferencias = await dependencias.preferencias.ler();
+if (preferencias.perfil) config.prompt.perfil = preferencias.perfil;
 
 const bot = new BotService({
   ...dependencias,
@@ -28,13 +33,14 @@ const bot = new BotService({
 });
 
 const agenda = new Agenda({
-  tarefas: config.agenda.tarefas,
+  repo: dependencias.agenda,
   fusoHorario: config.agenda.fusoHorario,
   bot,
   metricas,
 });
+await agenda.carregar();
 // Guarda a escolha do painel para ela sobreviver ao restart.
-const aoTrocarPerfil = (perfil) => salvarPreferencias(config.preferenciasArquivo, { perfil });
+const aoTrocarPerfil = (perfil) => dependencias.preferencias.gravar({ perfil });
 
 const app = criarServidor({
   bot,
@@ -60,7 +66,7 @@ const server = app.listen(config.porta, () => {
   console.log(`🖼️  Detalhe de imagem: ${config.imagem.detalhe}`);
   console.log(`📚 Base de conhecimento: ${dependencias.base.nome}`);
   console.log(
-    `💾 Histórico: ${dependencias.conversas.nome} | pausas: ${dependencias.atendimento.nome}`,
+    `💾 Histórico: ${dependencias.conversas.nome} | pausas: ${dependencias.atendimento.nome} | estado: ${dependencias.lojas.nome}`,
   );
   lojas.listar().then((cadastradas) => {
     if (cadastradas.length > 0) {
