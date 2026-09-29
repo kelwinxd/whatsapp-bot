@@ -1,5 +1,6 @@
 import { config } from "../src/config.js";
 import { PostgresRepo } from "../src/adapters/conversas/PostgresRepo.js";
+import { PostgresAtendimento } from "../src/adapters/atendimento/PostgresAtendimento.js";
 
 // Cria as tabelas do bot:  npm run migrar
 //
@@ -13,5 +14,9 @@ if (!config.banco.url) {
 
 const repo = new PostgresRepo({ url: config.banco.url });
 await repo.migrar();
+
+const pausas = new PostgresAtendimento({ url: config.banco.url });
+await pausas.migrar();
+await pausas.fechar();
 console.log("✅ Tabelas criadas/atualizadas em", config.banco.url.replace(/:[^:@]+@/, ":***@"));
 await repo.fechar();

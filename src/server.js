@@ -59,7 +59,7 @@ export function criarServidor({
   // VPS, isso fica atrás do firewall (ou de um túnel SSH), nunca aberto.
   app.use("/painel", express.static(PASTA_PUBLICA));
 
-  app.get("/api/estado", (_req, res) =>
+  app.get("/api/estado", async (_req, res) =>
     res.json({
       whatsapp: bot.whatsapp.nome,
       ia: bot.ia.nome,
@@ -69,7 +69,7 @@ export function criarServidor({
       perfil: bot.prompt?.perfil ?? null,
       imagemDetalhe: bot.imagem?.detalhe ?? null,
       tarefas: agenda?.listar() ?? [],
-      pausados: bot.atendimento?.listar() ?? [],
+      pausados: (await bot.atendimento?.listar()) ?? [],
       resumo: metricas.resumo(),
       eventos: metricas.eventos,
     }),
@@ -142,19 +142,19 @@ export function criarServidor({
   // --- Atendimento humano ---
   // Pausar e retomar pelo painel, além dos comandos #pausar/#voltar que o dono
   // usa no próprio chat.
-  app.post("/api/atendimento/:telefone/pausar", (req, res) => {
+  app.post("/api/atendimento/:telefone/pausar", async (req, res) => {
     // Normaliza aqui: "(19) 99372-3677" precisa virar 5519993723677, que é
     // como o WhatsApp identifica a conversa.
     const telefone = normalizarTelefone(req.params.telefone);
     const minutos = req.body?.minutos === undefined ? null : Number(req.body.minutos);
-    const pausa = bot.atendimento.pausar(telefone, minutos);
+    const pausa = await bot.atendimento.pausar(telefone, minutos);
     logger.log(`🙋 ${telefone}: pausado pelo painel`);
     res.json({ pausado: true, ...pausa });
   });
 
-  app.post("/api/atendimento/:telefone/retomar", (req, res) => {
+  app.post("/api/atendimento/:telefone/retomar", async (req, res) => {
     const telefone = normalizarTelefone(req.params.telefone);
-    const retomou = bot.atendimento.retomar(telefone);
+    const retomou = await bot.atendimento.retomar(telefone);
     logger.log(`🤖 ${telefone}: retomado pelo painel`);
     res.json({ retomado: retomou });
   });

@@ -57,7 +57,7 @@ adaptadores da mesma porta, e o `BotService` não muda.
 | Etapa | O quê | Por que nessa ordem |
 | --- | --- | --- |
 | 1 ✅ | Histórico em Postgres (`HISTORY_STORE=postgres`) | é o que já causa bug visível: o bot se apresentando toda mensagem |
-| 2 | Pausas do atendimento humano | segundo bug de verdade: deploy no meio de um atendimento |
+| 2 ✅ | Pausas do atendimento humano | segundo bug de verdade: deploy no meio de um atendimento |
 | 3 | Lojas, preferências e agenda | o passo que permite duas instâncias |
 | 4 | Base do RAG em pgvector | quando a base passar de alguns milhares de pedaços |
 | 5 | Métricas e eventos | último: hoje servem para olhar o agora, não o histórico |
@@ -65,7 +65,7 @@ adaptadores da mesma porta, e o `BotService` não muda.
 Cada etapa é um adaptador novo e uma linha no `registry.js`. Nada de "parar
 tudo e migrar".
 
-## Etapa 1, já feita
+## Etapas 1 e 2, já feitas
 
 ```bash
 # o Postgres da Evolution já roda; basta um database separado
@@ -78,7 +78,15 @@ E no `.env`:
 ```
 DATABASE_URL=postgresql://evolution:<senha>@localhost:5434/wpbot
 HISTORY_STORE=postgres
+# PAUSAS_STORE segue o HISTORY_STORE quando não é declarado
 ```
+
+Duas tabelas: `conversas` e `pausas`. O `npm run migrar` cria as duas e pode
+rodar de novo sem estragar nada.
+
+Verificado contra o banco de verdade: três processos distintos continuaram a
+mesma conversa (a apresentação veio só no primeiro), e uma pausa criada num
+processo apareceu no outro, com o prazo restante certo.
 
 A tabela guarda a conversa inteira e a leitura traz só as últimas
 `MAX_HISTORICO` mensagens: o corte é de quanto vai para o modelo, não de quanto

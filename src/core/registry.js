@@ -4,6 +4,8 @@ import { OpenAIAdapter } from "../adapters/ia/OpenAIAdapter.js";
 import { MemoriaRepo } from "../adapters/conversas/MemoriaRepo.js";
 import { PostgresRepo } from "../adapters/conversas/PostgresRepo.js";
 import { MemoriaBase, BaseNula } from "../adapters/base/MemoriaBase.js";
+import { ControleDeAtendimento } from "./atendimento.js";
+import { PostgresAtendimento } from "../adapters/atendimento/PostgresAtendimento.js";
 
 // Strategy: cada porta tem um catálogo de implementações, e a escolha vem da
 // configuração. Adicionar um provedor novo (Baileys direto, Twilio, Anthropic,
@@ -39,6 +41,11 @@ const base = {
     }),
 };
 
+const atendimento = {
+  memoria: () => new ControleDeAtendimento(),
+  postgres: (config) => new PostgresAtendimento({ url: config.banco.url }),
+};
+
 function escolher(catalogo, chave, rotulo, config, extras) {
   const criar = catalogo[chave];
   if (!criar) {
@@ -58,5 +65,6 @@ export function montarDependencias(config) {
     ia: provedorIA,
     conversas: escolher(conversas, config.provedores.historico, "histórico", config),
     base: escolher(base, config.rag.provedor, "RAG", config, { ia: provedorIA }),
+    atendimento: escolher(atendimento, config.provedores.pausas, "pausas", config),
   };
 }

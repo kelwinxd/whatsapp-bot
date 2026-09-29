@@ -24,6 +24,10 @@ export function comandoDoDono(texto) {
 }
 
 export class ControleDeAtendimento {
+  get nome() {
+    return "memoria";
+  }
+
   constructor({ minutosPadrao = MINUTOS_PADRAO, agora = () => Date.now() } = {}) {
     this.minutosPadrao = minutosPadrao;
     this.agora = agora;
@@ -31,14 +35,22 @@ export class ControleDeAtendimento {
     this.pausas = new Map();
   }
 
+  // Os métodos são assíncronos porque a outra implementação (Postgres) é: a
+  // porta tem que ser a mesma para o BotService não saber a diferença.
   /** @param {number|null} minutos  null pausa sem prazo, até alguém retomar. */
-  pausar(telefone, minutos = this.minutosPadrao) {
+  async pausar(telefone, minutos = this.minutosPadrao) {
     const expiraEm = minutos === null ? null : this.agora() + minutos * 60_000;
     this.pausas.set(telefone, expiraEm);
     return { telefone, expiraEm };
   }
 
-  estaPausado(telefone) {
+  async estaPausado(telefone) {
+    return this.pausaValida(telefone);
+  }
+
+  // Versão síncrona, usada internamente: estaPausado precisa ser assíncrono
+  // por causa da porta, mas aqui dentro não há espera nenhuma.
+  pausaValida(telefone) {
     if (!this.pausas.has(telefone)) return false;
 
     const expiraEm = this.pausas.get(telefone);
@@ -52,14 +64,14 @@ export class ControleDeAtendimento {
     return true;
   }
 
-  retomar(telefone) {
+  async retomar(telefone) {
     return this.pausas.delete(telefone);
   }
 
   /** Conversas pausadas agora, para o painel. */
-  listar() {
+  async listar() {
     return [...this.pausas.keys()]
-      .filter((telefone) => this.estaPausado(telefone))
+      .filter((telefone) => this.pausaValida(telefone))
       .map((telefone) => ({
         telefone,
         expiraEm: this.pausas.get(telefone),

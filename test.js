@@ -14,6 +14,7 @@ import { ControleDeAtendimento, IdsEnviados, comandoDoDono } from "./src/core/at
 import { normalizarTelefone } from "./src/core/telefone.js";
 import { carregarPreferencias, salvarPreferencias } from "./src/core/preferencias.js";
 import { PostgresRepo } from "./src/adapters/conversas/PostgresRepo.js";
+import { PostgresAtendimento } from "./src/adapters/atendimento/PostgresAtendimento.js";
 import { Metricas } from "./src/core/Metricas.js";
 import { custoDeTexto, custoDeTranscricao, custoDeImagemGerada, custoDeBusca, somar } from "./src/core/billing.js";
 import { Agenda, normalizarTelefones } from "./src/core/Agenda.js";
@@ -1450,31 +1451,31 @@ test("o bot se apresenta uma vez por conversa, e por contato", async () => {
 
 // --- Atendimento humano (handoff) ------------------------------------------
 
-test("ControleDeAtendimento pausa, expira e retoma", () => {
+test("ControleDeAtendimento pausa, expira e retoma", async () => {
   let agora = 0;
   const controle = new ControleDeAtendimento({ minutosPadrao: 30, agora: () => agora });
 
-  assert.equal(controle.estaPausado("551"), false);
+  assert.equal(await controle.estaPausado("551"), false);
 
-  controle.pausar("551");
-  assert.equal(controle.estaPausado("551"), true);
-  assert.equal(controle.listar()[0].minutosRestantes, 30);
+  await controle.pausar("551");
+  assert.equal(await controle.estaPausado("551"), true);
+  assert.equal((await controle.listar())[0].minutosRestantes, 30);
 
   // 29 minutos depois ainda está pausado; 31, não.
   agora = 29 * 60_000;
-  assert.equal(controle.estaPausado("551"), true);
+  assert.equal(await controle.estaPausado("551"), true);
   agora = 31 * 60_000;
-  assert.equal(controle.estaPausado("551"), false);
+  assert.equal(await controle.estaPausado("551"), false);
   // A pausa expirada sai do mapa na leitura, sem rotina de varredura.
-  assert.deepEqual(controle.listar(), []);
+  assert.deepEqual(await controle.listar(), []);
 
   // Sem prazo: fica até alguém retomar.
-  controle.pausar("552", null);
+  await controle.pausar("552", null);
   agora = 999 * 60_000;
-  assert.equal(controle.estaPausado("552"), true);
-  assert.equal(controle.listar()[0].minutosRestantes, null);
-  assert.equal(controle.retomar("552"), true);
-  assert.equal(controle.estaPausado("552"), false);
+  assert.equal(await controle.estaPausado("552"), true);
+  assert.equal((await controle.listar())[0].minutosRestantes, null);
+  assert.equal(await controle.retomar("552"), true);
+  assert.equal(await controle.estaPausado("552"), false);
 });
 
 test("IdsEnviados reconhece o que o bot mandou, e esquece o antigo", () => {
@@ -1524,7 +1525,7 @@ test("resposta humana pelo celular pausa o bot naquela conversa", async () => {
   const eco = { ...webhook("resposta do bot", { fromMe: true }), messageId: enviadas[0].id };
   const r1 = await bot.processarWebhook(eco);
   assert.match(r1.motivo, /próprio bot/);
-  assert.equal(bot.atendimento.estaPausado("5519999999999"), false);
+  assert.equal(await bot.atendimento.estaPausado("5519999999999"), false);
 
   // Agora uma mensagem fromMe com id desconhecido: foi digitada no celular.
   const r2 = await bot.processarWebhook({
@@ -1532,7 +1533,7 @@ test("resposta humana pelo celular pausa o bot naquela conversa", async () => {
     messageId: "DIGITADA_NO_CELULAR",
   });
   assert.match(r2.motivo, /humano assumiu/);
-  assert.equal(bot.atendimento.estaPausado("5519999999999"), true);
+  assert.equal(await bot.atendimento.estaPausado("5519999999999"), true);
   assert.equal(metricas.eventos[0].tipo, "pausada");
 
   // Cliente escreve de novo: o bot não responde.
@@ -1546,7 +1547,7 @@ test("resposta humana pelo celular pausa o bot naquela conversa", async () => {
   assert.equal(enviadas.length, 2);
 
   // Depois de retomar, volta a responder.
-  bot.atendimento.retomar("5519999999999");
+  await bot.atendimento.retomar("5519999999999");
   await bot.processarWebhook(webhook("ainda está aí?"));
   assert.equal(enviadas.length, 3);
 });
@@ -1567,15 +1568,15 @@ test("#pausar e #voltar controlam a conversa pelo próprio chat", async () => {
   const { bot, enviadas, metricas } = montarBotComHandoff();
 
   await bot.processarWebhook({ ...webhook("#pausar", { fromMe: true }), messageId: "CMD1" });
-  assert.equal(bot.atendimento.estaPausado("5519999999999"), true);
+  assert.equal(await bot.atendimento.estaPausado("5519999999999"), true);
   // Sem prazo: não expira sozinho.
-  assert.equal(bot.atendimento.listar()[0].minutosRestantes, null);
+  assert.equal((await bot.atendimento.listar())[0].minutosRestantes, null);
 
   await bot.processarWebhook(webhook("tem no tamanho M?"));
   assert.equal(enviadas.length, 0);
 
   await bot.processarWebhook({ ...webhook("#voltar", { fromMe: true }), messageId: "CMD2" });
-  assert.equal(bot.atendimento.estaPausado("5519999999999"), false);
+  assert.equal(await bot.atendimento.estaPausado("5519999999999"), false);
 
   await bot.processarWebhook(webhook("tem no tamanho M?"));
   assert.equal(enviadas.length, 1);
@@ -1623,7 +1624,7 @@ test("o marcador [HUMANO] pausa, avisa a equipe e não vaza para o cliente", asy
   assert.match(paraEquipe.texto, /o pedido chegou errado/);
 
   // E a conversa fica pausada até alguém retomar.
-  assert.equal(bot.atendimento.estaPausado("5519999999999"), true);
+  assert.equal(await bot.atendimento.estaPausado("5519999999999"), true);
   const pausa = metricas.eventos.find((e) => e.tipo === "pausada");
   assert.equal(pausa.motivo, "bot encaminhou para uma pessoa (equipe avisada)");
 
@@ -1794,4 +1795,35 @@ test("o bot lembra da conversa entre reinícios quando o histórico é persistid
   // Com o histórico preservado, a segunda mensagem não é tratada como a
   // primeira da conversa — que é o que fazia o bot se apresentar de novo.
   assert.equal(prompts.length, 2);
+});
+
+test("PostgresAtendimento calcula o prazo no banco", async () => {
+  const pool = poolFalso([
+    { rows: [{ expira_em: new Date("2026-01-01T10:30:00Z") }] },
+    { rows: [{ expira_em: null }] },
+  ]);
+  const controle = new PostgresAtendimento({ pool });
+
+  const comPrazo = await controle.pausar("551", 30);
+  assert.deepEqual(comPrazo, { telefone: "551", expiraEm: new Date("2026-01-01T10:30:00Z") });
+  // O prazo sai de now() do banco, não do relógio do processo.
+  assert.match(pool.consultas[0].texto, /now\(\) \+ \(\$2 \* INTERVAL '1 minute'\)/);
+  assert.match(pool.consultas[0].texto, /ON CONFLICT \(telefone\) DO UPDATE/);
+
+  // Pausa sem prazo guarda NULL.
+  const semPrazo = await controle.pausar("551", null);
+  assert.equal(semPrazo.expiraEm, null);
+  assert.deepEqual(pool.consultas[1].valores, ["551", null]);
+});
+
+test("PostgresAtendimento considera expirada a pausa vencida", async () => {
+  const pool = poolFalso([{ rows: [] }, { rows: [{ expira_em: null }] }]);
+  const controle = new PostgresAtendimento({ pool });
+
+  assert.equal(await controle.estaPausado("551"), false);
+  // O filtro de validade está na consulta, não no código.
+  assert.match(pool.consultas[0].texto, /expira_em IS NULL OR expira_em > now\(\)/);
+
+  assert.equal(await controle.estaPausado("551"), true);
+  assert.throws(() => new PostgresAtendimento({}), /DATABASE_URL/);
 });

@@ -62,6 +62,9 @@ export const config = {
     whatsapp: process.env.WHATSAPP_PROVIDER ?? "zapi", // zapi | evolution
     ia: process.env.AI_PROVIDER ?? "openai",
     historico: process.env.HISTORY_STORE ?? "memoria", // memoria | postgres
+    // As pausas seguem o histórico por padrão: quem quer uma coisa durável
+    // normalmente quer a outra.
+    pausas: process.env.PAUSAS_STORE ?? process.env.HISTORY_STORE ?? "memoria",
   },
 
   zapi: {

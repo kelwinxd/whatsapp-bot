@@ -267,7 +267,9 @@ O painel lista as conversas pausadas com o prazo restante, tem "Devolver ao
 bot" em cada uma e um "Assumir conversa" a partir do campo de telefone. Rotas:
 `POST /api/atendimento/:telefone/pausar` e `.../retomar`.
 
-A pausa fica em memória: reiniciar o bot devolve todas as conversas a ele.
+Com `HISTORY_STORE=postgres`, a pausa também vive no banco e sobrevive a
+deploy — em memória, reiniciar devolveria ao bot uma conversa que alguém
+estava conduzindo.
 
 ## Agenda (mensagens na hora marcada)
 

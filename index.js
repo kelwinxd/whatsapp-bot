@@ -24,6 +24,7 @@ const bot = new BotService({
   imagem: config.imagem,
   base: dependencias.base,
   lojas,
+  atendimento: dependencias.atendimento,
 });
 
 const agenda = new Agenda({
@@ -58,6 +59,9 @@ const server = app.listen(config.porta, () => {
   console.log(`💬 Prompt: ${config.prompt.textoCustomizado ? "customizado" : config.prompt.perfil}`);
   console.log(`🖼️  Detalhe de imagem: ${config.imagem.detalhe}`);
   console.log(`📚 Base de conhecimento: ${dependencias.base.nome}`);
+  console.log(
+    `💾 Histórico: ${dependencias.conversas.nome} | pausas: ${dependencias.atendimento.nome}`,
+  );
   lojas.listar().then((cadastradas) => {
     if (cadastradas.length > 0) {
       console.log(`🏪 Lojas: ${cadastradas.map((l) => l.perfil).join(", ")}`);

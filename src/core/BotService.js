@@ -201,17 +201,19 @@ export class BotService {
 
   // Quais mensagens o bot ignora. Fora daqui para ficar explícito e fácil de
   // mudar (liberar grupos, por exemplo).
-  deveIgnorar(mensagem) {
+  async deveIgnorar(mensagem) {
     if (mensagem.grupo) return "mensagem de grupo";
     // Alguém da equipe está conduzindo esta conversa: o bot fica fora até a
     // pausa expirar. Dois respondendo a mesma coisa é pior que demorar.
-    if (this.atendimento.estaPausado(mensagem.telefone)) return "atendimento humano em andamento";
+    if (await this.atendimento.estaPausado(mensagem.telefone)) {
+      return "atendimento humano em andamento";
+    }
     return null;
   }
 
   // Mensagem com fromMe que não saiu daqui = alguém digitou no celular. O bot
   // então cala nessa conversa e volta sozinho depois.
-  tratarMensagemPropria(mensagem) {
+  async tratarMensagemPropria(mensagem) {
     if (this.idsEnviados.contem(mensagem.id)) {
       return { tratada: false, motivo: "mensagem enviada pelo próprio bot" };
     }
@@ -220,7 +222,7 @@ export class BotService {
     // onde ele já está, sem abrir painel.
     const comando = comandoDoDono(mensagem.texto);
     if (comando === "pausar") {
-      this.atendimento.pausar(mensagem.telefone, null);
+      await this.atendimento.pausar(mensagem.telefone, null);
       this.metricas.registrar({
         tipo: "pausada",
         telefone: mensagem.telefone,
@@ -230,7 +232,7 @@ export class BotService {
       return { tratada: false, motivo: "pausado por comando" };
     }
     if (comando === "retomar") {
-      this.atendimento.retomar(mensagem.telefone);
+      await this.atendimento.retomar(mensagem.telefone);
       this.metricas.registrar({
         tipo: "retomada",
         telefone: mensagem.telefone,
@@ -240,7 +242,7 @@ export class BotService {
       return { tratada: false, motivo: "retomado por comando" };
     }
 
-    const { expiraEm } = this.atendimento.pausar(mensagem.telefone);
+    const { expiraEm } = await this.atendimento.pausar(mensagem.telefone);
     const minutos = this.atendimento.minutosPadrao;
     this.metricas.registrar({
       tipo: "pausada",
@@ -258,7 +260,7 @@ export class BotService {
 
     if (mensagem.minha) return this.tratarMensagemPropria(mensagem);
 
-    const ignorar = this.deveIgnorar(mensagem);
+    const ignorar = await this.deveIgnorar(mensagem);
     if (ignorar) {
       this.metricas.registrar({ tipo: "ignorada", telefone: mensagem.telefone, motivo: ignorar });
       return { tratada: false, motivo: ignorar };
@@ -510,7 +512,7 @@ export class BotService {
 
       // Encaminhou: pausa de verdade e chama a equipe.
       if (pedeHumano) {
-        this.atendimento.pausar(telefone, null);
+        await this.atendimento.pausar(telefone, null);
         const avisou = await this.avisarEquipe({ telefone, nome, pergunta: texto });
         this.metricas.registrar({
           tipo: "pausada",
