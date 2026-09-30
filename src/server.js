@@ -1,4 +1,5 @@
 import express from "express";
+import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { perfisDisponiveis, separarPerfil } from "./core/prompt.js";
 import { vocabulario } from "./core/horarios.js";
@@ -37,7 +38,26 @@ export function criarServidor({
     }),
   );
 
-  app.post("/webhook", (req, res) => {
+  // O webhook é a única rota que precisa ser pública, então é a única que fica
+  // exposta quando o túnel está no ar. Sem segredo, qualquer um que descubra a
+  // URL faz o bot responder (e gastar OpenAI) mandando payload falso.
+  //
+  // Comparação em tempo constante: comparar com === vaza, pelo tempo de
+  // resposta, quantos caracteres do token estavam certos.
+  const tokenConfere = (recebido) => {
+    if (!config.webhook?.token) return true; // sem token configurado, segue aberto
+    const esperado = Buffer.from(config.webhook.token);
+    const veio = Buffer.from(String(recebido ?? ""));
+    return veio.length === esperado.length && timingSafeEqual(veio, esperado);
+  };
+
+  const receberWebhook = (req, res) => {
+    // 404 em vez de 401: não confirma que existe um webhook aqui.
+    if (!tokenConfere(req.params.token ?? req.get("x-webhook-token"))) {
+      logger.log("🚫 Webhook recusado: token inválido");
+      return res.sendStatus(404);
+    }
+
     // Responde antes de processar: o provedor só quer saber se o webhook
     // chegou, e a resposta da IA demora mais que o timeout dele.
     res.sendStatus(200);
@@ -51,7 +71,12 @@ export function criarServidor({
         if (!r.tratada) logger.log(`↩️  Ignorada: ${r.motivo}`);
       })
       .catch((erro) => logger.error("❌ Erro no webhook:", erro));
-  });
+  };
+
+  // Duas formas: token no caminho (o provedor só precisa de uma URL) ou no
+  // cabeçalho x-webhook-token, para quem consegue configurar cabeçalho.
+  app.post("/webhook", receberWebhook);
+  app.post("/webhook/:token", receberWebhook);
 
   // --- Painel ---------------------------------------------------------------
   // Serve a página e os dados que ela consome. Não tem autenticação: é para
@@ -70,6 +95,10 @@ export function criarServidor({
       imagemDetalhe: bot.imagem?.detalhe ?? null,
       tarefas: agenda?.listar() ?? [],
       pausados: (await bot.atendimento?.listar()) ?? [],
+      tetos: {
+        ...bot.tetos,
+        usadoHoje: (await bot.limites?.valor("global")) ?? 0,
+      },
       resumo: metricas.resumo(),
       eventos: metricas.eventos,
     }),

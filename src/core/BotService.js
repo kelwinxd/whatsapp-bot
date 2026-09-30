@@ -7,6 +7,7 @@ import {
 import { nomeDoDocumento } from "./lojas.js";
 import { apresentacaoDaLoja } from "./formularioLoja.js";
 import { ControleDeAtendimento, IdsEnviados, comandoDoDono } from "./atendimento.js";
+import { MemoriaLimites, verificarLimites } from "./limites.js";
 import { metricasNulas } from "./Metricas.js";
 import { custoDeTexto, custoDeTranscricao, somar } from "./billing.js";
 
@@ -56,6 +57,9 @@ const AVISO_POR_TIPO = {
 
 const PERGUNTA_PADRAO_IMAGEM = "O que tem nesta imagem?";
 
+const LIMITE_ATINGIDO =
+  "Recebi muitas mensagens suas hoje 😅 Vou chamar alguém da equipe para continuar com você.";
+
 const AUDIO_SEM_FALA =
   "Não consegui entender o áudio 😕 Pode repetir ou escrever?";
 
@@ -72,6 +76,9 @@ export class BotService {
     ritmo = {},
     imagem = { detalhe: "auto" },
     atendimento = new ControleDeAtendimento(),
+    limites = new MemoriaLimites(),
+    // Tetos diários: por contato e no total. 0 desliga.
+    tetos = { porContato: 50, global: 500 },
     // Número que recebe o aviso quando o bot encaminha para uma pessoa.
     avisarEm = null,
     logger = console,
@@ -89,6 +96,8 @@ export class BotService {
     this.ritmo = { ...RITMO_PADRAO, ...ritmo };
     this.imagem = imagem;
     this.atendimento = atendimento;
+    this.limites = limites;
+    this.tetos = tetos;
     this.avisarEm = avisarEm;
     this.idsEnviados = new IdsEnviados();
     this.logger = logger;
@@ -453,6 +462,38 @@ export class BotService {
       const motivo = `mídia não suportada: ${midia.tipo}`;
       this.metricas.registrar({ tipo: "ignorada", telefone, motivo });
       return { tratada: false, motivo };
+    }
+
+    // Teto de uso: checado antes de qualquer chamada paga. Um laço ou alguém
+    // mal-intencionado queimaria o crédito da OpenAI em minutos.
+    const limite = await verificarLimites({
+      limites: this.limites,
+      telefone,
+      porContato: this.tetos.porContato,
+      global: this.tetos.global,
+    });
+
+    if (!limite.permitido) {
+      // Avisa uma vez só: repetir o aviso a cada mensagem seria o próprio
+      // comportamento que o limite existe para evitar.
+      if (limite.avisar) {
+        await this.enviar({
+          telefone,
+          texto: LIMITE_ATINGIDO,
+          digitandoMs: this.digitandoMs(LIMITE_ATINGIDO),
+        }).catch((e) => this.logger.error("❌ Falha ao avisar sobre o limite:", e));
+        // Passa para uma pessoa: quem bateu no teto legitimamente precisa de
+        // atendimento, não de silêncio.
+        await this.atendimento.pausar(telefone, null);
+      }
+
+      this.metricas.registrar({
+        tipo: "ignorada",
+        telefone,
+        motivo: `${limite.motivo} (contato: ${limite.doContato}, dia: ${limite.doDia})`,
+      });
+      this.logger.log(`🚧 ${telefone}: ${limite.motivo}`);
+      return { tratada: false, motivo: limite.motivo };
     }
 
     const inicio = Date.now();

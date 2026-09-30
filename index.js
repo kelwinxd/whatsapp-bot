@@ -30,6 +30,8 @@ const bot = new BotService({
   base: dependencias.base,
   lojas,
   atendimento: dependencias.atendimento,
+  limites: dependencias.limites,
+  tetos: config.tetos,
 });
 
 const agenda = new Agenda({
@@ -60,13 +62,20 @@ const server = app.listen(config.porta, () => {
   if (!server.listening) return;
 
   console.log(`✅ Express rodando em http://localhost:${config.porta}`);
-  console.log(`📮 Webhook em POST /webhook`);
+  console.log(
+    config.webhook.token
+      ? `📮 Webhook em POST /webhook/${config.webhook.token.slice(0, 4)}… (token exigido)`
+      : `📮 Webhook em POST /webhook ⚠️  sem token: qualquer um pode disparar`,
+  );
   console.log(`📱 WhatsApp: ${dependencias.whatsapp.nome} | 🧠 IA: ${dependencias.ia.nome}`);
   console.log(`💬 Prompt: ${config.prompt.textoCustomizado ? "customizado" : config.prompt.perfil}`);
   console.log(`🖼️  Detalhe de imagem: ${config.imagem.detalhe}`);
   console.log(`📚 Base de conhecimento: ${dependencias.base.nome}`);
   console.log(
     `💾 Histórico: ${dependencias.conversas.nome} | pausas: ${dependencias.atendimento.nome} | estado: ${dependencias.lojas.nome}`,
+  );
+  console.log(
+    `🚧 Teto diário: ${config.tetos.porContato || "sem"} por contato, ${config.tetos.global || "sem"} no total (${dependencias.limites.nome})`,
   );
   lojas.listar().then((cadastradas) => {
     if (cadastradas.length > 0) {

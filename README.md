@@ -157,6 +157,34 @@ Preço de cada operação e o custo médio por resposta estão em
 mostra o gasto acumulado da sessão, calculado com os tokens reais que a OpenAI
 reporta em cada chamada.
 
+## Segurança
+
+**Token no webhook.** Com `WEBHOOK_TOKEN` no `.env`, o webhook só aceita
+`POST /webhook/<token>` (ou o cabeçalho `x-webhook-token`). Sem isso, qualquer
+um que descubra a URL faz o bot responder e gastar OpenAI. Quem manda token
+errado recebe 404, não 401 — não vale confirmar que existe um webhook ali. A
+comparação é em tempo constante, porque `===` vazaria, pelo tempo de resposta,
+quantos caracteres estavam certos.
+
+Ao configurar, atualize a URL no provedor:
+
+```bash
+curl -X POST http://localhost:8080/webhook/set/bot -H "apikey: $EVOLUTION_API_KEY"   -H 'Content-Type: application/json'   -d '{"webhook":{"enabled":true,"url":"http://host.docker.internal:3000/webhook/<token>","events":["MESSAGES_UPSERT"]}}'
+```
+
+**Teto diário de mensagens.** `LIMITE_POR_CONTATO_DIA` (50) e
+`LIMITE_GLOBAL_DIA` (500) são checados **antes** de qualquer chamada paga. Ao
+estourar, o bot avisa a pessoa **uma vez** e passa a conversa para atendimento
+humano — repetir o aviso seria o próprio comportamento que o limite evita. O
+contador é por dia no fuso configurado e, com `LIMITES_STORE=postgres`,
+sobrevive a restart: em memória, cada deploy daria cota nova a quem estivesse
+abusando.
+
+⚠️ **O painel continua sem autenticação.** Enquanto o bot roda em `localhost`,
+tudo bem; ao expor a porta 3000 num túnel, as rotas `/api` vão junto — e elas
+mandam mensagem, leem conversas e apagam cadastro. Autenticação do painel é o
+próximo item da lista.
+
 ## Painel
 
 <http://localhost:3000/painel> — página em HTML puro, servida pelo próprio

@@ -21,6 +21,7 @@ const armazenamentos = [
   ["lojas", dependencias.lojas],
   ["agenda", dependencias.agenda],
   ["preferências", dependencias.preferencias],
+  ["limites", dependencias.limites],
 ];
 
 for (const [rotulo, adaptador] of armazenamentos) {

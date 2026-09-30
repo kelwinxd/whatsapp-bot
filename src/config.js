@@ -68,6 +68,7 @@ export const config = {
     // Lojas, agenda e preferências: arquivo | postgres. São a configuração de
     // operação, e migram juntas.
     estado: process.env.ESTADO_STORE ?? "arquivo",
+    limites: process.env.LIMITES_STORE ?? process.env.HISTORY_STORE ?? "memoria",
   },
 
   zapi: {
@@ -112,6 +113,18 @@ export const config = {
   // Atalhos de telefone para o painel, no formato "Nome=numero", separados por
   // ; ou vírgula. Ficam no .env pelo mesmo motivo do numeroTeste.
   contatos: lerContatos(process.env.CONTATOS, process.env.NUMBER_TEST),
+
+  // Tetos diários de mensagens respondidas. 0 desliga o teto.
+  tetos: {
+    porContato: Number(process.env.LIMITE_POR_CONTATO_DIA ?? 50),
+    global: Number(process.env.LIMITE_GLOBAL_DIA ?? 500),
+  },
+
+  webhook: {
+    // Segredo que o provedor precisa mandar (no caminho ou no cabeçalho).
+    // Vazio deixa o webhook aberto — só aceitável em rede local.
+    token: process.env.WEBHOOK_TOKEN || null,
+  },
 
   banco: {
     // Um Postgres para o que precisa durar. O container da Evolution já roda

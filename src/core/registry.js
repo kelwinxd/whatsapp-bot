@@ -12,6 +12,8 @@ import { ArquivoAgenda } from "../adapters/agenda/ArquivoAgenda.js";
 import { PostgresAgenda } from "../adapters/agenda/PostgresAgenda.js";
 import { ArquivoPreferencias } from "../adapters/preferencias/ArquivoPreferencias.js";
 import { PostgresPreferencias } from "../adapters/preferencias/PostgresPreferencias.js";
+import { MemoriaLimites } from "./limites.js";
+import { PostgresLimites } from "../adapters/limites/PostgresLimites.js";
 
 // Strategy: cada porta tem um catálogo de implementações, e a escolha vem da
 // configuração. Adicionar um provedor novo (Baileys direto, Twilio, Anthropic,
@@ -69,6 +71,12 @@ const preferencias = {
   postgres: (config) => new PostgresPreferencias({ url: config.banco.url }),
 };
 
+const limites = {
+  memoria: (config) => new MemoriaLimites({ fusoHorario: config.agenda.fusoHorario }),
+  postgres: (config) =>
+    new PostgresLimites({ url: config.banco.url, fusoHorario: config.agenda.fusoHorario }),
+};
+
 function escolher(catalogo, chave, rotulo, config, extras) {
   const criar = catalogo[chave];
   if (!criar) {
@@ -92,5 +100,6 @@ export function montarDependencias(config) {
     lojas: escolher(lojas, config.provedores.estado, "lojas", config),
     agenda: escolher(agenda, config.provedores.estado, "agenda", config),
     preferencias: escolher(preferencias, config.provedores.estado, "preferências", config),
+    limites: escolher(limites, config.provedores.limites, "limites", config),
   };
 }

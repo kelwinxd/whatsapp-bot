@@ -16,6 +16,8 @@ import { carregarPreferencias, salvarPreferencias } from "./src/core/preferencia
 import { PostgresRepo } from "./src/adapters/conversas/PostgresRepo.js";
 import { PostgresAtendimento } from "./src/adapters/atendimento/PostgresAtendimento.js";
 import { PostgresLojas } from "./src/adapters/lojas/PostgresLojas.js";
+import { MemoriaLimites, verificarLimites } from "./src/core/limites.js";
+import { PostgresLimites } from "./src/adapters/limites/PostgresLimites.js";
 import { PostgresAgenda } from "./src/adapters/agenda/PostgresAgenda.js";
 import { PostgresPreferencias } from "./src/adapters/preferencias/PostgresPreferencias.js";
 import { Metricas } from "./src/core/Metricas.js";
@@ -1927,4 +1929,95 @@ test("Agenda carrega e salva pelo repositório", async () => {
 
   // salvar() reagenda: sem parar, o cron segura o processo aberto.
   agenda.parar();
+});
+
+// --- Teto de mensagens -----------------------------------------------------
+
+test("MemoriaLimites conta por dia e esquece os dias anteriores", async () => {
+  const limites = new MemoriaLimites({ fusoHorario: "America/Sao_Paulo" });
+
+  assert.equal(await limites.incrementar("contato:551"), 1);
+  assert.equal(await limites.incrementar("contato:551"), 2);
+  assert.equal(await limites.valor("contato:551"), 2);
+  // Chaves diferentes não se misturam.
+  assert.equal(await limites.valor("contato:552"), 0);
+
+  // Dia antigo é descartado no próximo incremento.
+  limites.contadores.set("2020-01-01:contato:551", 99);
+  await limites.incrementar("contato:551");
+  assert.equal(limites.contadores.has("2020-01-01:contato:551"), false);
+});
+
+test("verificarLimites separa teto do contato do teto global", async () => {
+  const limites = new MemoriaLimites();
+  const checar = (telefone) =>
+    verificarLimites({ limites, telefone, porContato: 2, global: 3 });
+
+  assert.equal((await checar("551")).permitido, true);
+  assert.equal((await checar("551")).permitido, true);
+
+  // Terceira do mesmo contato estoura o teto dele, e é a única que avisa.
+  const terceira = await checar("551");
+  assert.equal(terceira.permitido, false);
+  assert.match(terceira.motivo, /contato/);
+  assert.equal(terceira.avisar, true);
+  assert.equal((await checar("551")).avisar, false);
+
+  // Sem teto configurado, passa sempre.
+  const semTeto = new MemoriaLimites();
+  for (let i = 0; i < 20; i++) {
+    assert.equal(
+      (await verificarLimites({ limites: semTeto, telefone: "551", porContato: 0, global: 0 }))
+        .permitido,
+      true,
+    );
+  }
+});
+
+test("o bot para de responder ao bater o teto, avisa uma vez e chama uma pessoa", async () => {
+  const enviadas = [];
+  let chamadasNaIA = 0;
+  const metricas = new Metricas();
+  const bot = new BotService({
+    whatsapp: {
+      nome: "falso",
+      interpretarWebhook: (c) => zapi.interpretarWebhook(c),
+      enviarTexto: async (p) => { enviadas.push(p.texto); return { id: `X${enviadas.length}` }; },
+    },
+    ia: { nome: "falsa", responder: async () => { chamadasNaIA++; return "ok"; } },
+    conversas: new MemoriaRepo({ maxHistorico: 6 }),
+    metricas,
+    tetos: { porContato: 2, global: 0 },
+    dormir: async () => {},
+    logger: { log() {}, error() {} },
+  });
+
+  await bot.processarWebhook(webhook("1"));
+  await bot.processarWebhook(webhook("2"));
+  assert.equal(chamadasNaIA, 2);
+
+  // Terceira: não chama a IA, avisa a pessoa e passa para atendimento humano.
+  const r = await bot.processarWebhook(webhook("3"));
+  assert.equal(r.tratada, false);
+  assert.equal(chamadasNaIA, 2);
+  assert.match(enviadas.at(-1), /muitas mensagens/);
+  assert.equal(await bot.atendimento.estaPausado("5519999999999"), true);
+
+  // Quarta: silêncio — nem IA, nem aviso repetido.
+  const antes = enviadas.length;
+  await bot.processarWebhook(webhook("4"));
+  assert.equal(chamadasNaIA, 2);
+  assert.equal(enviadas.length, antes);
+});
+
+test("PostgresLimites incrementa de forma atômica", async () => {
+  const pool = poolFalso([{ rows: [{ contador: 7 }] }, { rows: [{ contador: 7 }] }]);
+  const limites = new PostgresLimites({ pool });
+
+  assert.equal(await limites.incrementar("global"), 7);
+  // O incremento acontece no banco: duas mensagens juntas não se sobrescrevem.
+  assert.match(pool.consultas[0].texto, /DO UPDATE SET contador = limites.contador \+ 1/);
+  assert.equal(await limites.valor("global"), 7);
+
+  assert.throws(() => new PostgresLimites({}), /DATABASE_URL/);
 });
