@@ -180,10 +180,20 @@ contador é por dia no fuso configurado e, com `LIMITES_STORE=postgres`,
 sobrevive a restart: em memória, cada deploy daria cota nova a quem estivesse
 abusando.
 
-⚠️ **O painel continua sem autenticação.** Enquanto o bot roda em `localhost`,
-tudo bem; ao expor a porta 3000 num túnel, as rotas `/api` vão junto — e elas
-mandam mensagem, leem conversas e apagam cadastro. Autenticação do painel é o
-próximo item da lista.
+**Senha no painel.** Com `PAINEL_SENHA` no `.env`, tudo exige sessão — menos o
+webhook, o `/health` e a tela de login. Página redireciona para o login;
+chamada de API recebe 401 e o painel manda para a mesma tela.
+
+A sessão é um cookie assinado com HMAC, sem estado no servidor: reiniciar não
+desloga ninguém e duas instâncias aceitam o mesmo cookie, desde que partilhem
+`PAINEL_SEGREDO`. O cookie é `httpOnly` (um XSS não leva a sessão embora) e
+`SameSite=Strict` (outro site não consegue usá-la). Sem `PAINEL_SEGREDO`, ele é
+derivado da senha — então trocar a senha invalida as sessões abertas.
+
+Cinco senhas erradas da mesma origem bloqueiam novas tentativas por 15 minutos.
+
+Sem `PAINEL_SENHA`, o painel segue aberto e a subida avisa em letras garrafais:
+não exponha a porta nesse estado.
 
 ## Painel
 

@@ -101,6 +101,18 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
+
+      // Sessão expirada ou ausente: o servidor responde 401 e a página manda
+      // para o login, em vez de mostrar tela vazia sem explicação.
+      const fetchOriginal = window.fetch.bind(window);
+      window.fetch = async (...args) => {
+        const resposta = await fetchOriginal(...args);
+        if (resposta.status === 401 && !location.pathname.endsWith("login.html")) {
+          location.href = "/painel/login.html";
+        }
+        return resposta;
+      };
+      const fetchAutenticado = true;
       const escapar = (s) =>
         String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 

@@ -82,7 +82,11 @@ const server = app.listen(config.porta, () => {
       console.log(`🏪 Lojas: ${cadastradas.map((l) => l.perfil).join(", ")}`);
     }
   });
-  console.log(`🖥️  Painel em http://localhost:${config.porta}/painel`);
+  console.log(
+    config.painel.senha
+      ? `🖥️  Painel em http://localhost:${config.porta}/painel (com senha)`
+      : `🖥️  Painel em http://localhost:${config.porta}/painel ⚠️  SEM SENHA: não exponha esta porta`,
+  );
   const quantas = agenda.iniciar();
   if (quantas > 0) console.log(`⏰ ${quantas} tarefa(s) na agenda`);
 });

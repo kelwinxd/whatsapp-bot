@@ -120,6 +120,14 @@ export const config = {
     global: Number(process.env.LIMITE_GLOBAL_DIA ?? 500),
   },
 
+  painel: {
+    // Sem senha, o painel fica aberto — aceitável só em rede local.
+    senha: process.env.PAINEL_SENHA || null,
+    // Segredo de assinatura do cookie. Sem um próprio, é derivado da senha.
+    segredo: process.env.PAINEL_SEGREDO || null,
+    horasDeSessao: Number(process.env.PAINEL_HORAS_SESSAO ?? 12),
+  },
+
   webhook: {
     // Segredo que o provedor precisa mandar (no caminho ou no cabeçalho).
     // Vazio deixa o webhook aberto — só aceitável em rede local.

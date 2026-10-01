@@ -1,5 +1,13 @@
 import express from "express";
 import { timingSafeEqual } from "node:crypto";
+import {
+  criarToken,
+  tokenValido,
+  senhaConfere,
+  lerCookie,
+  segredoPadrao,
+  FreioDeTentativas,
+} from "./core/autenticacao.js";
 import { fileURLToPath } from "node:url";
 import { perfisDisponiveis, separarPerfil } from "./core/prompt.js";
 import { vocabulario } from "./core/horarios.js";
@@ -23,6 +31,66 @@ export function criarServidor({
 }) {
   const app = express();
   app.use(express.json({ limit: "10mb" }));
+
+  // --- Autenticação do painel ----------------------------------------------
+  // Só o webhook e a tela de login ficam fora: todo o resto manda mensagem,
+  // lê conversa ou muda configuração.
+  const COOKIE = "wpbot_sessao";
+  const senha = config.painel?.senha ?? null;
+  const segredo = config.painel?.segredo ?? (senha ? segredoPadrao(senha) : null);
+  const freio = new FreioDeTentativas();
+
+  const liberado = (req) =>
+    req.path.startsWith("/webhook") ||
+    req.path === "/health" ||
+    req.path === "/painel/login.html" ||
+    req.path === "/api/login";
+
+  app.use((req, res, next) => {
+    if (!senha || liberado(req)) return next();
+
+    if (tokenValido({ token: lerCookie(req.get("cookie"), COOKIE), segredo })) return next();
+
+    // Página pede a tela de login; chamada de API recebe 401 para o painel
+    // saber redirecionar sozinho.
+    if (req.method === "GET" && req.accepts("html") && !req.path.startsWith("/api/")) {
+      return res.redirect("/painel/login.html");
+    }
+    return res.status(401).json({ erro: "não autenticado" });
+  });
+
+  app.post("/api/login", (req, res) => {
+    if (!senha) return res.json({ autenticado: true, aviso: "painel sem senha configurada" });
+
+    const origem = req.ip ?? "desconhecida";
+    if (freio.bloqueado(origem)) {
+      logger.log(`🚫 Login bloqueado por tentativas: ${origem}`);
+      return res.status(429).json({ erro: "muitas tentativas; tente de novo em alguns minutos" });
+    }
+
+    if (!senhaConfere(req.body?.senha, senha)) {
+      const restantes = freio.errou(origem);
+      logger.log(`🚫 Senha incorreta (${origem}), ${Math.max(restantes, 0)} tentativa(s)`);
+      return res.status(401).json({ erro: "senha incorreta" });
+    }
+
+    freio.acertou(origem);
+    const token = criarToken({ segredo, horas: config.painel.horasDeSessao });
+    // httpOnly: JavaScript da página não lê o cookie, então um XSS não leva a
+    // sessão embora. SameSite=Strict: outro site não consegue usar a sessão.
+    res.cookie?.(COOKIE, token, {
+      httpOnly: true,
+      sameSite: "strict",
+      maxAge: config.painel.horasDeSessao * 60 * 60 * 1000,
+    });
+    logger.log("🔓 Painel: sessão iniciada");
+    res.json({ autenticado: true });
+  });
+
+  app.post("/api/logout", (req, res) => {
+    res.clearCookie?.(COOKIE);
+    res.json({ autenticado: false });
+  });
 
   app.get("/", (_req, res) => res.send("Bot vivo 🚀 — painel em /painel"));
 

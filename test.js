@@ -18,6 +18,14 @@ import { PostgresAtendimento } from "./src/adapters/atendimento/PostgresAtendime
 import { PostgresLojas } from "./src/adapters/lojas/PostgresLojas.js";
 import { MemoriaLimites, verificarLimites } from "./src/core/limites.js";
 import { PostgresLimites } from "./src/adapters/limites/PostgresLimites.js";
+import {
+  criarToken,
+  tokenValido,
+  senhaConfere,
+  lerCookie,
+  segredoPadrao,
+  FreioDeTentativas,
+} from "./src/core/autenticacao.js";
 import { PostgresAgenda } from "./src/adapters/agenda/PostgresAgenda.js";
 import { PostgresPreferencias } from "./src/adapters/preferencias/PostgresPreferencias.js";
 import { Metricas } from "./src/core/Metricas.js";
@@ -2020,4 +2028,73 @@ test("PostgresLimites incrementa de forma atômica", async () => {
   assert.equal(await limites.valor("global"), 7);
 
   assert.throws(() => new PostgresLimites({}), /DATABASE_URL/);
+});
+
+// --- Autenticação do painel ------------------------------------------------
+
+test("o cookie de sessão é assinado e expira", () => {
+  const segredo = "segredo-de-teste";
+  const agora = 1_000_000;
+
+  const token = criarToken({ segredo, horas: 2, agora });
+  assert.equal(tokenValido({ token, segredo, agora }), true);
+
+  // Depois da validade, não vale mais.
+  assert.equal(tokenValido({ token, segredo, agora: agora + 3 * 60 * 60 * 1000 }), false);
+
+  // Assinatura de outro segredo não passa: é o que impede forjar sessão.
+  assert.equal(tokenValido({ token, segredo: "outro", agora }), false);
+
+  // Validade adulterada invalida a assinatura.
+  const [, assinatura] = token.split(".");
+  assert.equal(tokenValido({ token: `99999999999999.${assinatura}`, segredo, agora }), false);
+
+  assert.equal(tokenValido({ token: "", segredo, agora }), false);
+  assert.equal(tokenValido({ token: "sem-ponto", segredo, agora }), false);
+});
+
+test("trocar a senha invalida as sessões abertas", () => {
+  // O segredo é derivado da senha quando não há um próprio, então senha nova
+  // significa assinatura nova — que é o que se espera ao trocar a senha.
+  const token = criarToken({ segredo: segredoPadrao("senha-antiga") });
+  assert.equal(tokenValido({ token, segredo: segredoPadrao("senha-antiga") }), true);
+  assert.equal(tokenValido({ token, segredo: segredoPadrao("senha-nova") }), false);
+});
+
+test("lerCookie encontra o cookie certo entre vários", () => {
+  assert.equal(lerCookie("a=1; wpbot_sessao=abc; b=2", "wpbot_sessao"), "abc");
+  assert.equal(lerCookie("outro=1", "wpbot_sessao"), null);
+  assert.equal(lerCookie(undefined, "wpbot_sessao"), null);
+});
+
+test("o freio bloqueia depois de erros seguidos e solta com o tempo", () => {
+  let agora = 0;
+  const freio = new FreioDeTentativas({ maximo: 3, minutosBloqueado: 15, agora: () => agora });
+
+  assert.equal(freio.bloqueado("1.2.3.4"), false);
+  freio.errou("1.2.3.4");
+  freio.errou("1.2.3.4");
+  assert.equal(freio.bloqueado("1.2.3.4"), false);
+  freio.errou("1.2.3.4");
+  assert.equal(freio.bloqueado("1.2.3.4"), true);
+
+  // Outra origem não é afetada.
+  assert.equal(freio.bloqueado("5.6.7.8"), false);
+
+  // Passado o tempo, libera.
+  agora = 16 * 60_000;
+  assert.equal(freio.bloqueado("1.2.3.4"), false);
+
+  // Acertar a senha limpa o histórico de tentativas.
+  freio.errou("9.9.9.9");
+  freio.acertou("9.9.9.9");
+  assert.equal(freio.tentativas.has("9.9.9.9"), false);
+});
+
+test("senhaConfere não aceita prefixo nem tamanho diferente", () => {
+  assert.equal(senhaConfere("segredo", "segredo"), true);
+  assert.equal(senhaConfere("segred", "segredo"), false);
+  assert.equal(senhaConfere("segredoo", "segredo"), false);
+  assert.equal(senhaConfere("", "segredo"), false);
+  assert.equal(senhaConfere(undefined, "segredo"), false);
 });

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Entrar no painel</title>
+    <style>
+      :root {
+        --fundo: #0f1115;
+        --cartao: #171a21;
+        --borda: #252a35;
+        --texto: #e6e8eb;
+        --apagado: #8b93a1;
+        --verde: #3ddc84;
+        --vermelho: #ff6b6b;
+        --azul: #5aa9e6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: var(--fundo);
+        color: var(--texto);
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      form {
+        width: 100%;
+        max-width: 340px;
+        background: var(--cartao);
+        border: 1px solid var(--borda);
+        border-radius: 10px;
+        padding: 22px;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p.sub { color: var(--apagado); font-size: 13px; margin: 0 0 18px; }
+      label { display: block; font-size: 13px; color: var(--apagado); margin-bottom: 6px; }
+      input, button {
+        font: inherit; color: var(--texto); background: #11141a; width: 100%;
+        border: 1px solid var(--borda); border-radius: 8px; padding: 12px;
+      }
+      input:focus { outline: none; border-color: var(--azul); }
+      button {
+        margin-top: 12px; cursor: pointer; font-weight: 600;
+        background: var(--verde); color: #06240f; border-color: transparent;
+      }
+      button:disabled { opacity: .5; cursor: progress; }
+      #aviso { font-size: 13px; min-height: 20px; margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <form id="entrar">
+      <h1>Painel do bot</h1>
+      <p class="sub">Esta tela existe porque o painel manda mensagem e lê conversas.</p>
+
+      <label for="senha">Senha</label>
+      <input id="senha" type="password" autocomplete="current-password" autofocus />
+
+      <button id="botao" type="submit">Entrar</button>
+      <div id="aviso"></div>
+    </form>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      $("entrar").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        $("botao").disabled = true;
+        $("aviso").textContent = "";
+
+        try {
+          const resposta = await fetch("/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ senha: $("senha").value }),
+          });
+          const dados = await resposta.json();
+          if (!resposta.ok) throw new Error(dados.erro ?? "falhou");
+
+          // A sessão vem em cookie httpOnly: a página não guarda nada.
+          location.href = "/painel/";
+        } catch (erro) {
+          $("aviso").textContent = "❌ " + erro.message;
+          $("aviso").style.color = "var(--vermelho)";
+          $("senha").value = "";
+          $("senha").focus();
+        } finally {
+          $("botao").disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
